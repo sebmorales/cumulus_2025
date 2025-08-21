@@ -1,0 +1,474 @@
+[
+  /* ---------- CALIFORNIA – BAJA CALIFORNIA ---------- */
+  {
+    "name": "San Ysidro",
+    "US State": "California",
+    "US closest city": "San Diego",
+    "Mex State": "Baja California",
+    "Mex closest city": "Tijuana",
+    "coordinates": { "lat": 32.54333, "lon": -117.02972 },
+    "note": "Vehicles and pedestrians; open 24/7; no commercial trucks."
+  },
+  {
+    "name": "San Ysidro - PedEast",
+    "US State": "California",
+    "US closest city": "San Diego",
+    "Mex State": "Baja California",
+    "Mex closest city": "Tijuana",
+    "coordinates": { "lat": 32.5466, "lon": -117.0362 },
+    "note": "Pedestrian-only facility on the east side."
+  },
+  {
+    "name": "PedWest",
+    "US State": "California",
+    "US closest city": "San Diego",
+    "Mex State": "Baja California",
+    "Mex closest city": "Tijuana",
+    "coordinates": { "lat": 32.5439, "lon": -117.0436 },
+    "note": "Pedestrian-only; hours have varied."
+  },
+  {
+    "name": "Cross Border Xpress (CBX) - Tijuana Airport",
+    "US State": "California",
+    "US closest city": "San Diego (Otay Mesa)",
+    "Mex State": "Baja California",
+    "Mex closest city": "Tijuana (TIJ Airport)",
+    "coordinates": { "lat": 32.5557, "lon": -116.9749 },
+    "note": "Pedestrian bridge for ticketed airline passengers."
+  },
+  {
+    "name": "Otay Mesa",
+    "US State": "California",
+    "US closest city": "San Diego",
+    "Mex State": "Baja California",
+    "Mex closest city": "Tijuana (Mesa de Otay)",
+    "coordinates": { "lat": 32.5570, "lon": -116.9435 },
+    "note": "Major commercial and passenger crossing."
+  },
+  {
+    "name": "Tecate",
+    "US State": "California",
+    "US closest city": "Tecate, CA",
+    "Mex State": "Baja California",
+    "Mex closest city": "Tecate",
+    "coordinates": { "lat": 32.5707, "lon": -116.6269 },
+    "note": "Passenger, pedestrians, and trucks; mountain route."
+  },
+  {
+    "name": "Calexico West",
+    "US State": "California",
+    "US closest city": "Calexico",
+    "Mex State": "Baja California",
+    "Mex closest city": "Mexicali",
+    "coordinates": { "lat": 32.6710, "lon": -115.4980 },
+    "note": "Passenger and pedestrians; no trucks."
+  },
+  {
+    "name": "Calexico West - Pedestrian Gate",
+    "US State": "California",
+    "US closest city": "Calexico",
+    "Mex State": "Baja California",
+    "Mex closest city": "Mexicali",
+    "coordinates": { "lat": 32.6721, "lon": -115.4970 },
+    "note": "Pedestrian-only gate adjacent to Calexico West."
+  },
+  {
+    "name": "Calexico East",
+    "US State": "California",
+    "US closest city": "Calexico",
+    "Mex State": "Baja California",
+    "Mex closest city": "Mexicali",
+    "coordinates": { "lat": 32.6948, "lon": -115.3739 },
+    "note": "Passenger, pedestrians, and commercial trucks."
+  },
+  {
+    "name": "Andrade (Los Algodones)",
+    "US State": "California",
+    "US closest city": "Winterhaven",
+    "Mex State": "Baja California",
+    "Mex closest city": "Los Algodones",
+    "coordinates": { "lat": 32.7188, "lon": -114.7214 },
+    "note": "Passenger and pedestrians; popular for medical tourism."
+  },
+
+  /* ---------- ARIZONA – SONORA ---------- */
+  {
+    "name": "San Luis",
+    "US State": "Arizona",
+    "US closest city": "San Luis, AZ",
+    "Mex State": "Sonora",
+    "Mex closest city": "San Luis Río Colorado",
+    "coordinates": { "lat": 32.4879, "lon": -114.7773 },
+    "note": "Passenger and pedestrians; no trucks."
+  },
+  {
+    "name": "San Luis II",
+    "US State": "Arizona",
+    "US closest city": "San Luis, AZ",
+    "Mex State": "Sonora",
+    "Mex closest city": "San Luis Río Colorado",
+    "coordinates": { "lat": 32.4469, "lon": -114.7270 },
+    "note": "Commercial trucks and some passenger traffic."
+  },
+  {
+    "name": "Lukeville",
+    "US State": "Arizona",
+    "US closest city": "Lukeville",
+    "Mex State": "Sonora",
+    "Mex closest city": "Sonoyta",
+    "coordinates": { "lat": 31.8794, "lon": -112.8157 },
+    "note": "Gateway to Puerto Peñasco corridor."
+  },
+  {
+    "name": "Sasabe",
+    "US State": "Arizona",
+    "US closest city": "Sasabe",
+    "Mex State": "Sonora",
+    "Mex closest city": "El Sásabe",
+    "coordinates": { "lat": 31.4889, "lon": -111.5448 },
+    "note": "Low-volume rural crossing."
+  },
+  {
+    "name": "Nogales - Mariposa",
+    "US State": "Arizona",
+    "US closest city": "Nogales, AZ",
+    "Mex State": "Sonora",
+    "Mex closest city": "Nogales",
+    "coordinates": { "lat": 31.3330, "lon": -110.9886 },
+    "note": "Major commercial and passenger facility."
+  },
+  {
+    "name": "Nogales - DeConcini (Grand Ave)",
+    "US State": "Arizona",
+    "US closest city": "Nogales, AZ",
+    "Mex State": "Sonora",
+    "Mex closest city": "Nogales",
+    "coordinates": { "lat": 31.3358, "lon": -110.9405 },
+    "note": "Passenger and pedestrians; no trucks."
+  },
+  {
+    "name": "Nogales - Morley Gate",
+    "US State": "Arizona",
+    "US closest city": "Nogales, AZ",
+    "Mex State": "Sonora",
+    "Mex closest city": "Nogales",
+    "coordinates": { "lat": 31.3339, "lon": -110.9408 },
+    "note": "Pedestrian-only."
+  },
+  {
+    "name": "Naco",
+    "US State": "Arizona",
+    "US closest city": "Bisbee",
+    "Mex State": "Sonora",
+    "Mex closest city": "Naco",
+    "coordinates": { "lat": 31.3332, "lon": -109.9480 },
+    "note": "Passenger and pedestrians."
+  },
+  {
+    "name": "Douglas",
+    "US State": "Arizona",
+    "US closest city": "Douglas",
+    "Mex State": "Sonora",
+    "Mex closest city": "Agua Prieta",
+    "coordinates": { "lat": 31.3446, "lon": -109.5456 },
+    "note": "Passenger, pedestrians, and commercial trucks."
+  },
+
+  /* ---------- NEW MEXICO – CHIHUAHUA ---------- */
+  {
+    "name": "Antelope Wells",
+    "US State": "New Mexico",
+    "US closest city": "Antelope Wells",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "El Berrendo",
+    "coordinates": { "lat": 31.3349, "lon": -108.5299 },
+    "note": "Very remote; limited daytime hours."
+  },
+  {
+    "name": "Columbus",
+    "US State": "New Mexico",
+    "US closest city": "Columbus",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "Puerto Palomas",
+    "coordinates": { "lat": 31.8273, "lon": -107.6398 },
+    "note": "Passenger, pedestrians, and commercial trucks."
+  },
+  {
+    "name": "Santa Teresa",
+    "US State": "New Mexico",
+    "US closest city": "Santa Teresa",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "San Jerónimo",
+    "coordinates": { "lat": 31.8147, "lon": -106.5719 },
+    "note": "Major commercial alternative to El Paso."
+  },
+
+  /* ---------- TEXAS – CHIHUAHUA ---------- */
+  {
+    "name": "El Paso - Paso del Norte (PDN)",
+    "US State": "Texas",
+    "US closest city": "El Paso",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "Ciudad Juárez",
+    "coordinates": { "lat": 31.7591, "lon": -106.4869 },
+    "note": "One-way northbound for vehicles; two-way for pedestrians."
+  },
+  {
+    "name": "El Paso - Stanton Street",
+    "US State": "Texas",
+    "US closest city": "El Paso",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "Ciudad Juárez",
+    "coordinates": { "lat": 31.7580, "lon": -106.4879 },
+    "note": "Northbound SENTRI-only for vehicles."
+  },
+  {
+    "name": "El Paso - Bridge of the Americas (BOTA)",
+    "US State": "Texas",
+    "US closest city": "El Paso",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "Ciudad Juárez",
+    "coordinates": { "lat": 31.7588, "lon": -106.4508 },
+    "note": "Toll-free; passenger and commercial."
+  },
+  {
+    "name": "El Paso - Ysleta–Zaragoza",
+    "US State": "Texas",
+    "US closest city": "El Paso",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "Ciudad Juárez (Zaragoza)",
+    "coordinates": { "lat": 31.6944, "lon": -106.3272 },
+    "note": "Passenger, pedestrians, and commercial trucks."
+  },
+  {
+    "name": "Marcelino Serna (Tornillo–Guadalupe)",
+    "US State": "Texas",
+    "US closest city": "Tornillo",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "Guadalupe",
+    "coordinates": { "lat": 31.4402, "lon": -106.0804 },
+    "note": "Replaced former Fabens crossing."
+  },
+  {
+    "name": "Fort Hancock - El Porvenir",
+    "US State": "Texas",
+    "US closest city": "Fort Hancock",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "El Porvenir",
+    "coordinates": { "lat": 31.2986, "lon": -105.8465 },
+    "note": "Passenger and pedestrians; no trucks."
+  },
+  {
+    "name": "Presidio - Ojinaga",
+    "US State": "Texas",
+    "US closest city": "Presidio",
+    "Mex State": "Chihuahua",
+    "Mex closest city": "Ojinaga",
+    "coordinates": { "lat": 29.5600, "lon": -104.4103 },
+    "note": "Passenger, pedestrians, and commercial trucks."
+  },
+
+  /* ---------- TEXAS – COAHUILA ---------- */
+  {
+    "name": "Boquillas (Big Bend NP)",
+    "US State": "Texas",
+    "US closest city": "Big Bend National Park",
+    "Mex State": "Coahuila",
+    "Mex closest city": "Boquillas del Carmen",
+    "coordinates": { "lat": 29.1320, "lon": -102.9690 },
+    "note": "Non-motorized pedestrian rowboat/burro crossing; no vehicles."
+  },
+  {
+    "name": "Amistad Dam",
+    "US State": "Texas",
+    "US closest city": "Del Rio",
+    "Mex State": "Coahuila",
+    "Mex closest city": "Ciudad Acuña",
+    "coordinates": { "lat": 29.4679, "lon": -101.0488 },
+    "note": "On Amistad Dam; passenger vehicles only."
+  },
+  {
+    "name": "Del Rio - Acuña International Bridge",
+    "US State": "Texas",
+    "US closest city": "Del Rio",
+    "Mex State": "Coahuila",
+    "Mex closest city": "Ciudad Acuña",
+    "coordinates": { "lat": 29.3611, "lon": -100.9006 },
+    "note": "Passenger, pedestrians, buses, and commercial trucks."
+  },
+  {
+    "name": "Eagle Pass International Bridge I",
+    "US State": "Texas",
+    "US closest city": "Eagle Pass",
+    "Mex State": "Coahuila",
+    "Mex closest city": "Piedras Negras",
+    "coordinates": { "lat": 28.7091, "lon": -100.5083 },
+    "note": "Passenger and pedestrians; no trucks."
+  },
+  {
+    "name": "Eagle Pass International Bridge II (Camino Real)",
+    "US State": "Texas",
+    "US closest city": "Eagle Pass",
+    "Mex State": "Coahuila",
+    "Mex closest city": "Piedras Negras",
+    "coordinates": { "lat": 28.6979, "lon": -100.5071 },
+    "note": "Primary commercial crossing."
+  },
+
+  /* ---------- TEXAS – NUEVO LEÓN ---------- */
+  {
+    "name": "Laredo - Colombia Solidarity (Bridge III)",
+    "US State": "Texas",
+    "US closest city": "Laredo",
+    "Mex State": "Nuevo León",
+    "Mex closest city": "Colombia (Anáhuac)",
+    "coordinates": { "lat": 27.6404, "lon": -99.5299 },
+    "note": "Commercial and passenger bridge north of Laredo."
+  },
+
+  /* ---------- TEXAS – TAMAULIPAS ---------- */
+  {
+    "name": "Laredo - World Trade Bridge (Bridge IV)",
+    "US State": "Texas",
+    "US closest city": "Laredo",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Nuevo Laredo",
+    "coordinates": { "lat": 27.6062, "lon": -99.5281 },
+    "note": "Commercial-only; no cars or pedestrians."
+  },
+  {
+    "name": "Laredo - Juárez–Lincoln (Bridge II)",
+    "US State": "Texas",
+    "US closest city": "Laredo",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Nuevo Laredo",
+    "coordinates": { "lat": 27.5039, "lon": -99.5075 },
+    "note": "Passenger and pedestrians; downtown."
+  },
+  {
+    "name": "Laredo - Gateway to the Americas (Bridge I)",
+    "US State": "Texas",
+    "US closest city": "Laredo",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Nuevo Laredo",
+    "coordinates": { "lat": 27.5034, "lon": -99.5034 },
+    "note": "Passenger and pedestrians; no trucks."
+  },
+  {
+    "name": "Falcon Dam",
+    "US State": "Texas",
+    "US closest city": "Falcon Heights",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Nueva Ciudad Guerrero",
+    "coordinates": { "lat": 26.5606, "lon": -99.1419 },
+    "note": "Passenger vehicles via dam; no trucks."
+  },
+  {
+    "name": "Roma - Ciudad Miguel Alemán International Bridge",
+    "US State": "Texas",
+    "US closest city": "Roma",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Ciudad Miguel Alemán",
+    "coordinates": { "lat": 26.4046, "lon": -99.0159 },
+    "note": "Passenger and pedestrians."
+  },
+  {
+    "name": "Rio Grande City - Camargo International Bridge",
+    "US State": "Texas",
+    "US closest city": "Rio Grande City",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Camargo",
+    "coordinates": { "lat": 26.3777, "lon": -98.8158 },
+    "note": "Passenger, pedestrians, and commercial trucks."
+  },
+  {
+    "name": "Los Ebanos Ferry",
+    "US State": "Texas",
+    "US closest city": "Los Ebanos",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Gustavo Díaz Ordaz",
+    "coordinates": { "lat": 26.2704, "lon": -98.5653 },
+    "note": "Hand-pulled cable ferry; weather/river dependent."
+  },
+  {
+    "name": "Anzalduas International Bridge",
+    "US State": "Texas",
+    "US closest city": "Mission",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Reynosa",
+    "coordinates": { "lat": 26.1735, "lon": -98.3135 },
+    "note": "Primarily passenger; commercial policies have evolved."
+  },
+  {
+    "name": "Hidalgo - McAllen–Hidalgo–Reynosa Bridge",
+    "US State": "Texas",
+    "US closest city": "Hidalgo",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Reynosa",
+    "coordinates": { "lat": 26.0963, "lon": -98.2667 },
+    "note": "Major urban passenger and pedestrian crossing."
+  },
+  {
+    "name": "Pharr - Reynosa International Bridge",
+    "US State": "Texas",
+    "US closest city": "Pharr",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Reynosa",
+    "coordinates": { "lat": 26.0713, "lon": -98.2040 },
+    "note": "Primary commercial bridge for Hidalgo County."
+  },
+  {
+    "name": "Donna - Río Bravo International Bridge",
+    "US State": "Texas",
+    "US closest city": "Donna",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Río Bravo",
+    "coordinates": { "lat": 26.0811, "lon": -98.0494 },
+    "note": "Passenger bridge; no trucks."
+  },
+  {
+    "name": "Progreso - Nuevo Progreso International Bridge",
+    "US State": "Texas",
+    "US closest city": "Progreso",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Nuevo Progreso",
+    "coordinates": { "lat": 26.0925, "lon": -97.9569 },
+    "note": "Passenger and pedestrians; popular for tourism."
+  },
+  {
+    "name": "Los Indios - Free Trade International Bridge",
+    "US State": "Texas",
+    "US closest city": "Los Indios",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Matamoros",
+    "coordinates": { "lat": 26.0409, "lon": -97.7378 },
+    "note": "Passenger and commercial."
+  },
+  {
+    "name": "Brownsville & Matamoros (B&M) Bridge",
+    "US State": "Texas",
+    "US closest city": "Brownsville",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Matamoros",
+    "coordinates": { "lat": 25.9003, "lon": -97.5012 },
+    "note": "Passenger and pedestrians; no trucks."
+  },
+  {
+    "name": "Brownsville - Gateway International Bridge",
+    "US State": "Texas",
+    "US closest city": "Brownsville",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Matamoros",
+    "coordinates": { "lat": 25.9015, "lon": -97.4979 },
+    "note": "Passenger and pedestrians; downtown."
+  },
+  {
+    "name": "Brownsville - Veterans International Bridge at Los Tomates",
+    "US State": "Texas",
+    "US closest city": "Brownsville",
+    "Mex State": "Tamaulipas",
+    "Mex closest city": "Matamoros",
+    "coordinates": { "lat": 25.8797, "lon": -97.4730 },
+    "note": "Passenger, pedestrians, and commercial trucks."
+  }
+]

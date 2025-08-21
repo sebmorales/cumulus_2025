@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cumulus</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Border path with text -->
+        <div id="border-container">
+            <!-- Map outline background -->
+            <svg id="map-outline-svg" viewBox="0 0 1947 1332" preserveAspectRatio="xMidYMid meet">
+                <!-- Map outline will be loaded here -->
+            </svg>
+            <div id="outline-text"></div>
+            <!-- Border line foreground -->
+            <svg id="border-svg" viewBox="0 0 1398 553" preserveAspectRatio="xMidYMid meet">
+                <!-- Border path will be loaded here -->
+            </svg>
+            <div id="border-text"></div>
+            <!-- Invisible hover zones will be generated here -->
+            <div id="hover-zones"></div>
+        </div>
+
+        <!-- Image container for satellite images -->
+        <div id="images-container"></div>
+
+        <!-- Scroll reveal panels -->
+        <div id="left-panel" class="panel hidden">
+            <h2>Recent Crossings</h2>
+            <ul id="crossings-list"></ul>
+        </div>
+
+        <div id="right-panel" class="panel hidden">
+            <h2>Cumulus</h2>
+            <p>In a time when communities live in fear, mass deportations are spectacle, and nationalism gains ground, Cumulus monitors the Mexico–US border, not for people but for clouds. It searches the skies for atmospheric bodies crossing the geopolitical line. Using two electronic paper displays, updated every 11 minutes, the installation presents a full view of the American continent on one screen and a focused look at the border region on the other.</p>
+            <p>Clouds drift freely across rivers, deserts, walls, and coastlines, indifferent to the boundaries below. Cumulus employs a custom computer vision program to scan NOAA satellite imagery and identify clouds migrating across the skies. Its design is based on CubeSat satellite technology, which has brought space closer through smaller, more accessible systems. It uses similar materials, components, dimensions, and energy sources. But unlike CubeSats orbiting above, Cumulus remains grounded, offering a planetary perspective from Earth. At its core, Cumulus embodies the Overview Effect, the cognitive shift astronauts experience when viewing Earth from space.</p>
+            <p>Cumulus invites viewers to see and unsee the border, offering a low-earth orbit perspective in which divisions dissolve and a shared atmosphere takes shape. The project contrasts the fluidity of nature with the fixity of politics, revealing borders as human constructs, arbitrary and invisible from above, yet deeply shaping lives below.</p>
+        </div>
+
+        <!-- Connection lines canvas -->
+        <canvas id="connections-canvas"></canvas>
+        
+        <!-- MORAKANA logo -->
+        <div id="morakana-logo">
+            <img src="./cumulus_reference/MORAKANAclear.png" alt="MORAKANA">
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="sentences.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
