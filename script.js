@@ -63,7 +63,7 @@ class CloudMigrationApp {
             console.log(`Loaded ${this.crossingsData.length} border crossings`);
             
             // Load and setup map outline SVG
-            const mapOutlineResponse = await fetch('./cumulus_reference/map_outline.svg');
+            const mapOutlineResponse = await fetch('./cumulus_reference/map_outline_extended.svg');
             if (mapOutlineResponse.ok) {
                 const mapOutlineText = await mapOutlineResponse.text();
                 const parser = new DOMParser();
@@ -245,10 +245,10 @@ class CloudMigrationApp {
         console.log('Loading real cloud detections from server...');
         
         try {
-            // Get actual image files from clouds_over_borders directory
+            // Get actual image files from crossings directory
             // Add cache busting to ensure fresh data on each reload
             const cacheBuster = Date.now();
-            const response = await fetch(`/api/clouds-over-borders-list?_=${cacheBuster}`);
+            const response = await fetch(`/api/crossings-list?_=${cacheBuster}`);
             
             if (response.ok) {
                 const imageFiles = await response.json();
@@ -259,7 +259,7 @@ class CloudMigrationApp {
                     console.log(`Parsed ${detections.length} valid detections from ${imageFiles.length} files`);
                     return detections;
                 } else {
-                    console.log('No cloud detection images found in clouds_over_borders directory');
+                    console.log('No cloud detection images found in crossings directory');
                     return this.createMockDetections(); // Fallback to mock data
                 }
             } else {
@@ -485,15 +485,43 @@ class CloudMigrationApp {
         });
     }
 
+    updateSatelliteImagePositions() {
+        this.visibleImages.forEach(imageData => {
+            const crossing = imageData.crossing;
+            const img = imageData.element;
+            
+            if (!img || !img.parentNode) return;
+            
+            // Get current SVG and container positions
+            const borderSvg = document.getElementById('border-svg');
+            const container = document.getElementById('border-container');
+            const svgRect = borderSvg.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            
+            // Get SVG viewBox for scaling
+            const viewBox = borderSvg.viewBox.baseVal;
+            const scaleX = svgRect.width / viewBox.width;
+            const scaleY = svgRect.height / viewBox.height;
+            
+            // Calculate exact center position of the crossing
+            const centerX = (crossing.svgX * scaleX) + (svgRect.left - containerRect.left);
+            const centerY = (crossing.svgY * scaleY) + (svgRect.top - containerRect.top);
+            
+            // Update image position
+            img.style.left = `${centerX}px`;
+            img.style.top = `${centerY}px`;
+        });
+    }
+
     showSatelliteImage(crossing, zone) {
         // Create image element
         const img = document.createElement('img');
         img.className = 'satellite-image';
         
-        // Use specific border cloud image from border_images/clouds_over_borders/
+        // Use specific border cloud image from public/images/crossings/
         const borderNumber = crossing.index + 1;
         // Get the most recent image for this border
-        img.src = `/api/border-image/${borderNumber}`;
+        img.src = `/api/crossing-image/${borderNumber}`;
         img.alt = `Satellite image at ${crossing.name}`;
         
         // Position image centered on the crossing coordinates
@@ -563,7 +591,7 @@ class CloudMigrationApp {
         
         // Use specific border cloud image
         const borderNumber = crossing.index + 1;
-        img.src = `/api/border-image/${borderNumber}`;
+        img.src = `/api/crossing-image/${borderNumber}`;
         img.alt = `Satellite image at ${crossing.name}`;
         
         // Position image centered exactly on the crossing's SVG coordinates
@@ -1048,9 +1076,9 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
                 return;
             }
             
-            // Get the position of the right edge of the text + 8px offset
+            // Get the position of the right edge of the text - 4px offset
             const listItemRect = listItem.getBoundingClientRect();
-            const startX = listItemRect.right + 8;
+            const startX = listItemRect.right -8;
             const startY = listItemRect.top + (listItemRect.height / 2);
             
             // Validate start coordinates
@@ -1352,8 +1380,8 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             const allDetections = await this.getRecentCloudDetections();
             console.log(`📸 Showing all ${allDetections.length} available images`);
             
-            // Show an image for each detection
-            allDetections.forEach(detection => {
+            // Show an image for each detection (reverse order so most recent renders last and appears on top)
+            allDetections.reverse().forEach(detection => {
                 const crossing = this.crossingsData[detection.crossingIndex];
                 if (crossing) {
                     this.showShowAllModeImage(crossing, detection);
@@ -1378,7 +1406,7 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         
         // Use specific border cloud image
         const borderNumber = crossing.index + 1;
-        img.src = `/api/border-image/${borderNumber}`;
+        img.src = `/api/crossing-image/${borderNumber}`;
         img.alt = `Satellite image at ${crossing.name}`;
         
         // Position image centered exactly on the crossing's SVG coordinates
@@ -1539,5 +1567,6 @@ window.addEventListener('resize', () => {
         window.cloudApp.updateTextPositions();
         window.cloudApp.updateOutlineTextPositions();
         window.cloudApp.updateHoverZonePositions();
+        window.cloudApp.updateSatelliteImagePositions();
     }
 });
