@@ -1,3 +1,10 @@
+@font-face {
+    font-family: 'Suisse Regular';
+    src: url('./public/fonts/Suisse Int\'l/SuisseIntl-Regular.otf') format('opentype');
+    font-weight: normal;
+    font-style: normal;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -5,7 +12,7 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Suisse Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: #ffffff;
     overflow-x: hidden;
     min-height: 200vh; /* Allow scrolling to trigger panels */
@@ -41,23 +48,28 @@ body::-webkit-scrollbar {
 
 #map-outline-svg {
     position: absolute;
-    width: 112%; /* Restored to larger size to extend beyond browser window */
+    width: 114%; /* Restored to larger size to extend beyond browser window */
     height: auto;
     max-width: none;
     max-height: none;
     z-index: 1;
-    left: 45%; /* Keep the horizontal alignment we set */
-    top: 46%; /* Keep the vertical alignment we set */
-    transform: translate(-50%, -50%);
+    left: 50%; /* Exact same center reference as border SVG */
+    top: 50%; /* Must match border SVG exactly */
+    transform: translate(-50%, -50%) translate(-12%, -76%); /* Center + offset fine-tuned */
     opacity: 0.3; /* Make it subtle */
     overflow: visible;
 }
 
 #border-svg {
-    position: relative;
+    /* position: relative; */
+    position: absolute; /* Change to absolute for consistent positioning */
     width: 80%;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%); /* Center the border SVG */
+    /* width: 80%;
     height: auto;
-    max-width: none;
+    max-width: none; */
     z-index: 2;
 }
 
@@ -154,14 +166,15 @@ body::-webkit-scrollbar {
 
 .satellite-image {
     position: absolute;
-    max-width: 504px;
-    max-height: 336px;
+    width: 11.11vw;
+    height: auto;
     /* border-radius: 6px; */
     /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); */
     opacity: 0;
     transform: scale(0.8);
     transition: opacity 0.5s ease, transform 0.5s ease;
     pointer-events: none;
+    z-index: 8; /* Above SVGs but below panels */
 }
 
 .satellite-image.visible {
@@ -210,8 +223,16 @@ body::-webkit-scrollbar {
     border-top: 1px solid #e0e0e0;
 }
 
+/* Default desktop behavior - panels visible */
 .panel.hidden {
     transform: translateY(100%);
+}
+
+/* Mobile behavior - panels completely hidden by default */
+@media (max-width: 768px) {
+    .panel.hidden {
+        transform: translateY(calc(100% + 2px)) !important; /* Extra 2px to hide borders completely */
+    }
 }
 
 .panel h2 {
@@ -247,7 +268,7 @@ body::-webkit-scrollbar {
 }
 
 .plain-text-info {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Suisse Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 14px;
     color: #333;
     font-weight: normal;
@@ -272,10 +293,10 @@ body::-webkit-scrollbar {
 /* MORAKANA logo */
 #morakana-logo {
     position: fixed;
-    bottom: 00px;
+    top: 0px;
     right: 20px;
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(-20px);
     transition: opacity 0.8s ease, transform 0.8s ease;
     z-index: 11;
     pointer-events: none;
@@ -297,7 +318,7 @@ body::-webkit-scrollbar {
 @media (max-width: 768px) {
     .panel {
         width: 100vw;
-        height: 35vh;
+        height: 33.33vh; /* 1/3 of screen height */
     }
     
     #left-panel {
@@ -305,42 +326,87 @@ body::-webkit-scrollbar {
         border-bottom: 1px solid #e0e0e0;
     }
     
-    #right-panel {
-        bottom: 35vh;
+    #right-panel:not(.hidden) {
+        bottom: 0; /* Position at bottom instead of above left panel */
         border-left: none;
         border-bottom: 1px solid #e0e0e0;
     }
     
+    #right-panel.hidden {
+        bottom: 0; /* Reset to bottom edge */
+        border-left: none;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    /* Ensure panels are completely hidden on mobile when they have .hidden class */
+    .panel.hidden {
+        transform: translateY(calc(100% + 2px)) !important; /* Push completely off-screen */
+    }
+    
     #border-svg {
-        width: 90%;
+        width: 80%;
     }
     
     .border-char {
-        font-size: 8px;
+        font-size: 6px; /* Reduced from 8px */
+    }
+    
+    .outline-char {
+        font-size: 5px; /* Reduced from default */
     }
     
     .satellite-image {
-        max-width: 240px;
-        max-height: 180px;
+        width: 13.33vw;
+        height: auto;
+    }
+    
+    /* Larger touch targets for mobile */
+    .hover-zone {
+        width: 44px !important;
+        height: 44px !important;
+    }
+    
+    /* Smaller Morakana logo on mobile */
+    #morakana-logo img {
+        height: 69px; /* 20% smaller than 86px */
     }
 }
 
 @media (max-width: 480px) {
     .panel {
         width: 100vw;
-        height: 30vh;
+        height: 33.33vh; /* Keep 1/3 height on small screens too */
     }
     
-    #right-panel {
-        bottom: 30vh;
+    #right-panel:not(.hidden) {
+        bottom: 0; /* Position at bottom for lower 1/3 */
+    }
+    
+    #right-panel.hidden {
+        bottom: 0; /* Reset to bottom edge when hidden */
+    }
+    
+    /* Ensure panels are completely hidden on small mobile when they have .hidden class */
+    .panel.hidden {
+        transform: translateY(calc(100% + 2px)) !important; /* Push completely off-screen */
     }
     
     .border-char {
-        font-size: 6px;
+        font-size: 4px; /* Even smaller for very small screens */
+    }
+    
+    .outline-char {
+        font-size: 3px; /* Even smaller for very small screens */
     }
     
     .satellite-image {
-        max-width: 180px;
-        max-height: 120px;
+        width: 15.56vw;
+        height: auto;
+    }
+    
+    /* Maintain touch target size on small screens */
+    .hover-zone {
+        width: 44px !important;
+        height: 44px !important;
     }
 }

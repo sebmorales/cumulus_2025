@@ -31,6 +31,17 @@ class CloudMigrationApp {
         this.currentHoveredCrossing = null; // Track which crossing is currently being hovered
         this.socket = null; // Socket.IO connection
         this.showAllMode = false; // Track if "S" key mode is active
+        this.isDragging = false; // Track if user is dragging
+        this.lastTouchTime = 0; // Throttle touch events
+        this.touchThrottleDelay = 100; // Minimum ms between touch reveals
+        this.panelsVisible = false; // Track panel visibility state
+        this.touchStartPos = null; // Track initial touch position
+        this.dragThreshold = 10; // Minimum pixels to consider it a drag
+        this.currentZoom = 1; // Current zoom level
+        this.minZoom = 0.5; // Minimum zoom out
+        this.maxZoom = 3; // Maximum zoom in
+        this.lastPinchDistance = 0; // Track pinch distance
+        this.zoomCenter = { x: 0, y: 0 }; // Center point for zoom
         
         this.init();
     }
@@ -50,6 +61,8 @@ class CloudMigrationApp {
         this.setupConnectionCanvas();
         this.initializeSocketIO();
         this.setupKeyboardListeners();
+        this.setupTouchDragListeners();
+        // this.setupPinchZoom(); // Disabled for now
     }
 
     async loadData() {
@@ -433,23 +446,29 @@ class CloudMigrationApp {
         }
         
         const hoverZonesContainer = document.getElementById('hover-zones');
-        const borderContainer = document.getElementById('border-container');
+        const hoverContainer = document.getElementById('border-container');
         
         this.crossingsData.forEach((crossing, index) => {
             const zone = document.createElement('div');
             zone.className = 'hover-zone';
             zone.dataset.crossingIndex = index;
             
-            // Set size (tunable)
-            const size = CONFIG.HOVER_ZONE_SIZE;
+            // Set size (tunable) - larger on mobile for better touch targets
+            const isMobile = window.innerWidth <= 768;
+            const size = isMobile ? 44 : CONFIG.HOVER_ZONE_SIZE;
             zone.style.width = `${size}px`;
             zone.style.height = `${size}px`;
             
             // Position will be updated on resize
             this.positionHoverZone(zone, crossing);
             
-            // Add hover event
+            // Add hover event for desktop and touch event for mobile
             zone.addEventListener('mouseenter', () => this.showSatelliteImage(crossing, zone));
+            zone.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent default touch behavior
+                this.showSatelliteImage(crossing, zone);
+            });
+            zone.addEventListener('click', () => this.showSatelliteImage(crossing, zone));
             
             hoverZonesContainer.appendChild(zone);
         });
@@ -468,9 +487,12 @@ class CloudMigrationApp {
         const scaleX = svgRect.width / viewBox.width;
         const scaleY = svgRect.height / viewBox.height;
         
+        // Get current zone size (could be mobile or desktop size)
+        const zoneSize = parseInt(zone.style.width) || CONFIG.HOVER_ZONE_SIZE;
+        
         // Calculate position relative to container
-        const x = (crossing.svgX * scaleX) + (svgRect.left - containerRect.left) - (CONFIG.HOVER_ZONE_SIZE / 2);
-        const y = (crossing.svgY * scaleY) + (svgRect.top - containerRect.top) - (CONFIG.HOVER_ZONE_SIZE / 2);
+        const x = (crossing.svgX * scaleX) + (svgRect.left - containerRect.left) - (zoneSize / 2);
+        const y = (crossing.svgY * scaleY) + (svgRect.top - containerRect.top) - (zoneSize / 2);
         
         zone.style.left = `${x}px`;
         zone.style.top = `${y}px`;
@@ -486,31 +508,8 @@ class CloudMigrationApp {
     }
 
     updateSatelliteImagePositions() {
-        this.visibleImages.forEach(imageData => {
-            const crossing = imageData.crossing;
-            const img = imageData.element;
-            
-            if (!img || !img.parentNode) return;
-            
-            // Get current SVG and container positions
-            const borderSvg = document.getElementById('border-svg');
-            const container = document.getElementById('border-container');
-            const svgRect = borderSvg.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-            
-            // Get SVG viewBox for scaling
-            const viewBox = borderSvg.viewBox.baseVal;
-            const scaleX = svgRect.width / viewBox.width;
-            const scaleY = svgRect.height / viewBox.height;
-            
-            // Calculate exact center position of the crossing
-            const centerX = (crossing.svgX * scaleX) + (svgRect.left - containerRect.left);
-            const centerY = (crossing.svgY * scaleY) + (svgRect.top - containerRect.top);
-            
-            // Update image position
-            img.style.left = `${centerX}px`;
-            img.style.top = `${centerY}px`;
-        });
+        // Images now scale with border container, no manual repositioning needed
+        // Keep method for compatibility but it's no longer actively used
     }
 
     showSatelliteImage(crossing, zone) {
@@ -544,9 +543,9 @@ class CloudMigrationApp {
             img.src = './cumulus_reference/1_cumulus_landing.png'; // Fallback to reference image
         };
         
-        // Add to container
-        const imagesContainer = document.getElementById('images-container');
-        imagesContainer.appendChild(img);
+        // Add to border container so it scales with zoom
+        const imgContainer = document.getElementById('border-container');
+        imgContainer.appendChild(img);
         
         // Animate in
         setTimeout(() => {
@@ -595,8 +594,8 @@ class CloudMigrationApp {
         img.alt = `Satellite image at ${crossing.name}`;
         
         // Position image centered exactly on the crossing's SVG coordinates
-        const borderContainer = document.getElementById('border-container');
-        const containerRect = borderContainer.getBoundingClientRect();
+        const imageContainer = document.getElementById('border-container');
+        const containerRect = imageContainer.getBoundingClientRect();
         const borderSvg = document.getElementById('border-svg');
         const svgRect = borderSvg.getBoundingClientRect();
         
@@ -620,9 +619,9 @@ class CloudMigrationApp {
             img.src = './cumulus_reference/1_cumulus_landing.png';
         };
         
-        // Add to container
-        const imagesContainer = document.getElementById('images-container');
-        imagesContainer.appendChild(img);
+        // Add to border container so it scales with zoom
+        const imgContainer = document.getElementById('border-container');
+        imgContainer.appendChild(img);
         
         // Animate in
         setTimeout(() => {
@@ -1003,41 +1002,8 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             crossingsList.appendChild(li);
         });
         
-        // Minimal scroll interaction for panels and logo
-        const morakanaLogo = document.getElementById('morakana-logo');
-        let lastScrollY = 0;
-        let isScrollingUp = false;
-        
-        window.addEventListener('scroll', () => {
-            const currentScrollY = window.scrollY;
-            
-            // Detect scroll direction
-            if (currentScrollY > lastScrollY) {
-                // Scrolling down - show panels with minimal threshold
-                if (currentScrollY > 10) {
-                    leftPanel.classList.remove('hidden');
-                    rightPanel.classList.remove('hidden');
-                    morakanaLogo.classList.add('visible');
-                    // Stop 15-second timers when panels are shown again
-                    this.stopPersistentImageTimers();
-                    isScrollingUp = false;
-                }
-            } else if (currentScrollY < lastScrollY) {
-                // Scrolling up - hide panels if near top
-                if (currentScrollY < 5) {
-                    leftPanel.classList.add('hidden');
-                    rightPanel.classList.add('hidden');
-                    morakanaLogo.classList.remove('visible');
-                    // Clear connection lines when panels are closed/hidden
-                    this.clearConnectionLines();
-                    // Start 15-second timer for persistent images
-                    this.startPersistentImageTimers();
-                }
-                isScrollingUp = true;
-            }
-            
-            lastScrollY = currentScrollY;
-        });
+        // Desktop: scroll interaction, Mobile: tap interaction
+        this.setupDesktopScrollBehavior();
     }
 
     setupConnectionCanvas() {
@@ -1410,8 +1376,8 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         img.alt = `Satellite image at ${crossing.name}`;
         
         // Position image centered exactly on the crossing's SVG coordinates
-        const borderContainer = document.getElementById('border-container');
-        const containerRect = borderContainer.getBoundingClientRect();
+        const imageContainer = document.getElementById('border-container');
+        const containerRect = imageContainer.getBoundingClientRect();
         const borderSvg = document.getElementById('border-svg');
         const svgRect = borderSvg.getBoundingClientRect();
         
@@ -1435,9 +1401,9 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             img.src = './cumulus_reference/1_cumulus_landing.png';
         };
         
-        // Add to container
-        const imagesContainer = document.getElementById('images-container');
-        imagesContainer.appendChild(img);
+        // Add to border container so it scales with zoom
+        const imgContainer = document.getElementById('border-container');
+        imgContainer.appendChild(img);
         
         // Animate in
         setTimeout(() => {
@@ -1552,6 +1518,262 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         // Show the new image
         this.showShowAllModeImage(crossing, detection);
         console.log(`✅ Added new show-all image for ${crossing.name}`);
+    }
+
+    setupDesktopScrollBehavior() {
+        // Only enable scroll behavior on desktop (> 768px)
+        if (window.innerWidth > 768) {
+            const leftPanel = document.getElementById('left-panel');
+            const rightPanel = document.getElementById('right-panel');
+            const morakanaLogo = document.getElementById('morakana-logo');
+            let lastScrollY = 0;
+            
+            window.addEventListener('scroll', () => {
+                // Skip scroll behavior on mobile
+                if (window.innerWidth <= 768) return;
+                
+                const currentScrollY = window.scrollY;
+                
+                // Detect scroll direction
+                if (currentScrollY > lastScrollY) {
+                    // Scrolling down - show panels with minimal threshold
+                    if (currentScrollY > 10) {
+                        leftPanel.classList.remove('hidden');
+                        rightPanel.classList.remove('hidden');
+                        morakanaLogo.classList.add('visible');
+                        // Stop 15-second timers when panels are shown again
+                        this.stopPersistentImageTimers();
+                        this.panelsVisible = true;
+                    }
+                } else if (currentScrollY < lastScrollY) {
+                    // Scrolling up - hide panels if near top
+                    if (currentScrollY < 5) {
+                        leftPanel.classList.add('hidden');
+                        rightPanel.classList.add('hidden');
+                        morakanaLogo.classList.remove('visible');
+                        // Clear connection lines when panels are closed/hidden
+                        this.clearConnectionLines();
+                        // Start 15-second timer for persistent images
+                        this.startPersistentImageTimers();
+                        this.panelsVisible = false;
+                    }
+                }
+                
+                lastScrollY = currentScrollY;
+            });
+        }
+    }
+
+    setupTouchDragListeners() {
+        const container = document.getElementById('border-container');
+        
+        // Add touch event listeners to the border container
+        container.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            this.touchStartPos = {
+                x: touch.clientX,
+                y: touch.clientY,
+                time: Date.now()
+            };
+            this.isDragging = false; // Don't start dragging immediately
+        });
+        
+        container.addEventListener('touchmove', (e) => {
+            if (!this.touchStartPos) return;
+            
+            // Skip multi-touch (pinch zoom disabled)
+            if (e.touches.length > 1) {
+                return;
+            }
+            
+            const touch = e.touches[0];
+            const deltaX = Math.abs(touch.clientX - this.touchStartPos.x);
+            const deltaY = Math.abs(touch.clientY - this.touchStartPos.y);
+            const totalMovement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            // If movement exceeds threshold, consider it a drag
+            if (totalMovement > this.dragThreshold) {
+                this.isDragging = true;
+                e.preventDefault(); // Prevent scrolling while dragging
+                this.handleTouchReveal(e);
+            }
+        });
+        
+        container.addEventListener('touchend', (e) => {
+            if (this.touchStartPos) {
+                const touchDuration = Date.now() - this.touchStartPos.time;
+                
+                // If it was a short touch without dragging, toggle panels (mobile only)
+                if (!this.isDragging && touchDuration < 500 && window.innerWidth <= 768) {
+                    this.togglePanels();
+                }
+            }
+            
+            this.isDragging = false;
+            this.touchStartPos = null;
+        });
+        
+        container.addEventListener('touchcancel', () => {
+            this.isDragging = false;
+            this.touchStartPos = null;
+        });
+    }
+
+    handleTouchReveal(e) {
+        // Throttle touch events to prevent too many image reveals
+        const now = Date.now();
+        if (now - this.lastTouchTime < this.touchThrottleDelay) {
+            return;
+        }
+        this.lastTouchTime = now;
+
+        // Get touch coordinates
+        const touch = e.touches[0];
+        const containerRect = document.getElementById('border-container').getBoundingClientRect();
+        const touchX = touch.clientX - containerRect.left;
+        const touchY = touch.clientY - containerRect.top;
+
+        // Find the closest hover zone to the touch point
+        const closestZone = this.findClosestHoverZone(touchX, touchY);
+        
+        if (closestZone && closestZone.distance < 60) { // Within 60px of a crossing
+            const crossingIndex = parseInt(closestZone.zone.dataset.crossingIndex);
+            const crossing = this.crossingsData[crossingIndex];
+            
+            if (crossing) {
+                // Check if image is already visible to avoid duplicates
+                const existingImage = this.visibleImages.find(img => 
+                    img.crossing.index === crossing.index && 
+                    !img.triggeredFromPanel && 
+                    !img.showAllMode
+                );
+                
+                if (!existingImage) {
+                    this.showSatelliteImage(crossing, closestZone.zone);
+                }
+            }
+        }
+    }
+
+    findClosestHoverZone(touchX, touchY) {
+        const zones = document.querySelectorAll('.hover-zone');
+        let closest = null;
+        let minDistance = Infinity;
+
+        zones.forEach(zone => {
+            const zoneRect = zone.getBoundingClientRect();
+            const containerRect = document.getElementById('border-container').getBoundingClientRect();
+            
+            // Convert to container-relative coordinates
+            const zoneCenterX = (zoneRect.left - containerRect.left) + (zoneRect.width / 2);
+            const zoneCenterY = (zoneRect.top - containerRect.top) + (zoneRect.height / 2);
+            
+            // Calculate distance
+            const distance = Math.sqrt(
+                Math.pow(touchX - zoneCenterX, 2) + 
+                Math.pow(touchY - zoneCenterY, 2)
+            );
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+                closest = { zone, distance };
+            }
+        });
+
+        return closest;
+    }
+
+    togglePanels() {
+        const leftPanel = document.getElementById('left-panel');
+        const rightPanel = document.getElementById('right-panel');
+        const morakanaLogo = document.getElementById('morakana-logo');
+        
+        this.panelsVisible = !this.panelsVisible;
+        
+        if (this.panelsVisible) {
+            // Mobile: show only description panel, Desktop: show both panels
+            if (window.innerWidth <= 768) {
+                // Mobile - only show right panel (description)
+                rightPanel.classList.remove('hidden');
+                // Keep left panel hidden on mobile
+                leftPanel.classList.add('hidden');
+            } else {
+                // Desktop - show both panels
+                leftPanel.classList.remove('hidden');
+                rightPanel.classList.remove('hidden');
+            }
+            morakanaLogo.classList.add('visible');
+            // Stop 15-second timers when panels are shown
+            this.stopPersistentImageTimers();
+        } else {
+            // Hide panels
+            leftPanel.classList.add('hidden');
+            rightPanel.classList.add('hidden');
+            morakanaLogo.classList.remove('visible');
+            // Clear connection lines when panels are hidden
+            this.clearConnectionLines();
+            // Start 15-second timer for persistent images
+            this.startPersistentImageTimers();
+        }
+    }
+
+    setupPinchZoom() {
+        const zoomContainer = document.getElementById('border-container');
+        
+        zoomContainer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                // Calculate initial pinch distance
+                this.lastPinchDistance = this.getPinchDistance(e.touches);
+                
+                // Calculate center point between the two touches
+                this.zoomCenter = {
+                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+                };
+            }
+        });
+        
+        zoomContainer.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault(); // Prevent scrolling and other gestures
+                
+                const currentDistance = this.getPinchDistance(e.touches);
+                const scale = currentDistance / this.lastPinchDistance;
+                
+                // Calculate new zoom level
+                let newZoom = this.currentZoom * scale;
+                newZoom = Math.max(this.minZoom, Math.min(this.maxZoom, newZoom));
+                
+                // Apply zoom
+                this.applyZoom(newZoom);
+                
+                // Update for next calculation
+                this.lastPinchDistance = currentDistance;
+            }
+        });
+        
+        zoomContainer.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) {
+                this.lastPinchDistance = 0;
+            }
+        });
+    }
+
+    getPinchDistance(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    applyZoom(zoomLevel) {
+        this.currentZoom = zoomLevel;
+        const container = document.getElementById('border-container');
+        
+        // Apply transform with zoom
+        container.style.transform = `scale(${zoomLevel})`;
+        container.style.transformOrigin = 'center center';
+        
+        // No need to update positions since everything scales together now
     }
 }
 
