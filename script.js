@@ -42,6 +42,8 @@ class CloudMigrationApp {
         this.maxZoom = 3; // Maximum zoom in
         this.lastPinchDistance = 0; // Track pinch distance
         this.zoomCenter = { x: 0, y: 0 }; // Center point for zoom
+        this.borderAnalysisVisible = false; // Track border analysis image visibility
+        this.borderAnalysisElement = null; // Track border analysis DOM element
         
         this.init();
     }
@@ -54,7 +56,8 @@ class CloudMigrationApp {
         
         await this.loadData();
         this.setupSVG();
-        this.createCoordinateMapping();
+        await this.createCoordinateMapping();
+        // this.addCoordinateMarkers(); // Add debug markers - hidden
         this.createHoverZones();
         this.setupTextDisplay();
         this.setupScrollReveal();
@@ -172,14 +175,89 @@ class CloudMigrationApp {
         }
     }
 
-    createCoordinateMapping() {
+    async createCoordinateMapping() {
         if (!this.crossingsData || !Array.isArray(this.crossingsData) || !this.borderPath) {
             console.error('Missing crossings data or border path for coordinate mapping');
             return;
         }
         
-        // Create a proper mapping between real-world coordinates and SVG path positions
-        // Border runs west to east from California (-117°) to Texas (-97°)
+        // Load frontera points for better mapping
+        try {
+            const fronteraResponse = await fetch('/public/images/frontera.json');
+            const fronteraData = await fronteraResponse.json();
+            this.fronteraPoints = fronteraData.points;
+            console.log(`Loaded ${this.fronteraPoints.length} frontera points`);
+        } catch (error) {
+            console.warn('Could not load frontera.json, using fallback mapping:', error);
+            this.fronteraPoints = null;
+        }
+        
+        if (this.fronteraPoints && this.fronteraPoints.length === this.crossingsData.length) {
+            console.log(`✅ Using frontera-based coordinate mapping (${this.fronteraPoints.length} points)`);
+            this.createFronteraBasedMapping();
+        } else {
+            console.log(`❌ Using GPS-based coordinate mapping (frontera: ${this.fronteraPoints?.length || 'null'}, crossings: ${this.crossingsData.length})`);
+            this.createGPSBasedMapping();
+        }
+    }
+
+    createFronteraBasedMapping() {
+        // Direct pixel-to-SVG mapping without using the border path
+        // The frontera.json coordinates are pixels on a 1000x500 satellite image
+        // We'll map these directly to the SVG canvas dimensions
+        
+        const sourceImageWidth = 1000;  // Original satellite image width
+        const sourceImageHeight = 500;  // Original satellite image height
+        
+        // Get SVG canvas dimensions from the border SVG
+        const borderSvg = document.getElementById('border-svg');
+        const viewBox = borderSvg.viewBox.baseVal;
+        const svgWidth = viewBox.width;   // Should be 1398
+        const svgHeight = viewBox.height; // Should be 553
+        
+        console.log(`📏 SVG dimensions: ${svgWidth} x ${svgHeight}`);
+        console.log(`📏 Source image dimensions: ${sourceImageWidth} x ${sourceImageHeight}`);
+        
+        this.crossingsData.forEach((crossing, index) => {
+            if (index < this.fronteraPoints.length) {
+                const fronteraPoint = this.fronteraPoints[index];
+                
+                // Direct pixel-to-SVG coordinate mapping
+                // Scale the frontera pixel coordinates to match SVG dimensions
+                const svgX = (fronteraPoint.x / sourceImageWidth) * svgWidth;
+                const svgY = (fronteraPoint.y / sourceImageHeight) * svgHeight;
+                
+                // Convert to approximate GPS for reference
+                const lonProgress = fronteraPoint.x / sourceImageWidth;
+                const latProgress = 1 - (fronteraPoint.y / sourceImageHeight); // Flip Y axis
+                
+                const gpsBounds = {
+                    west: -117.04, east: -97.47, north: 32.54, south: 25.88
+                };
+                
+                const estimatedLon = gpsBounds.west + (gpsBounds.east - gpsBounds.west) * lonProgress;
+                const estimatedLat = gpsBounds.south + (gpsBounds.north - gpsBounds.south) * latProgress;
+                
+                // Store coordinates
+                crossing.fronteraPixel = fronteraPoint;
+                crossing.fronteraGPS = { lat: estimatedLat, lon: estimatedLon };
+                crossing.svgX = svgX;
+                crossing.svgY = svgY;
+                crossing.index = index;
+                
+                console.log(`🗺️ ${index+1}: ${crossing.name}`);
+                console.log(`   Frontera Pixel: (${fronteraPoint.x}, ${fronteraPoint.y})`);
+                console.log(`   Direct SVG: (${Math.round(svgX)}, ${Math.round(svgY)})`);
+                console.log(`   Estimated GPS: (${estimatedLat.toFixed(3)}, ${estimatedLon.toFixed(3)})`);
+                console.log(`   Original GPS: (${crossing.coordinates.lat.toFixed(3)}, ${crossing.coordinates.lon.toFixed(3)})`);
+            }
+        });
+        
+        console.log(`🎯 Mapped ${this.crossingsData.length} crossings using direct frontera-to-SVG mapping`);
+    }
+
+    createGPSBasedMapping() {
+        // Fallback to original GPS-based mapping
         
         // Get coordinate bounds from crossings data
         const lats = this.crossingsData.map(c => c.coordinates.lat);
@@ -192,54 +270,37 @@ class CloudMigrationApp {
         
         console.log(`Border bounds: ${minLat.toFixed(2)}°N to ${maxLat.toFixed(2)}°N, ${minLon.toFixed(2)}°W to ${maxLon.toFixed(2)}°W`);
         
-        // Calculate geographic distances to position crossings properly
-        // Use longitude as primary axis since border runs roughly west-to-east
-        
         // Map each crossing to a position along the SVG path based on geographic position
         this.crossingsData.forEach((crossing, originalIndex) => {
             // Calculate longitude-based progress (primary positioning)
             const lonProgress = (crossing.coordinates.lon - minLon) / (maxLon - minLon);
             
             // Apply non-linear scaling to better match border geography
-            // The border has more density in certain regions (Texas, California)
             let adjustedProgress = lonProgress;
             
-            // Fine-tune based on known border geography:
-            // - California/Arizona border (west) is relatively straight
-            // - Texas border (east) has more complex geography along Rio Grande
             if (lonProgress < 0.3) {
-                // Western section (CA/AZ) - slightly compress
                 adjustedProgress = lonProgress * 0.85;
             } else if (lonProgress > 0.7) {
-                // Eastern section (TX) - slightly expand to account for Rio Grande curves
                 adjustedProgress = 0.3 + (lonProgress - 0.3) * 1.1;
             }
             
-            // Ensure we stay within bounds
             adjustedProgress = Math.max(0, Math.min(1, adjustedProgress));
             
             const pathDistance = adjustedProgress * this.pathLength;
             const pathPoint = this.borderPath.getPointAtLength(pathDistance);
             
-            // Apply latitude-based adjustment for north-south positioning along border
+            // Apply latitude-based adjustment for north-south positioning
             const latNormalized = (crossing.coordinates.lat - minLat) / (maxLat - minLat);
-            
-            // More sophisticated latitude adjustment based on border curvature
             let latAdjustment = 0;
             
-            // Different adjustments for different border sections
             if (crossing.coordinates.lon < -110) {
-                // Western border (CA/AZ) - less north-south variation
                 latAdjustment = (latNormalized - 0.5) * 15;
             } else if (crossing.coordinates.lon > -105) {
-                // Eastern border (TX) - more north-south variation due to Rio Grande
                 latAdjustment = (latNormalized - 0.5) * 25;
             } else {
-                // Middle section (NM) - moderate adjustment
                 latAdjustment = (latNormalized - 0.5) * 20;
             }
             
-            // Store SVG coordinates for this crossing
             crossing.svgX = pathPoint.x;
             crossing.svgY = pathPoint.y + latAdjustment;
             crossing.pathDistance = pathDistance;
@@ -251,7 +312,7 @@ class CloudMigrationApp {
             console.log(`${crossing.name}: ${crossing.coordinates.lat.toFixed(3)}°N, ${crossing.coordinates.lon.toFixed(3)}°W → ${(adjustedProgress * 100).toFixed(1)}% along path → SVG(${Math.round(crossing.svgX)}, ${Math.round(crossing.svgY)})`);
         });
         
-        console.log(`Mapped ${this.crossingsData.length} crossings to SVG coordinates using west-to-east ordering`);
+        console.log(`Mapped ${this.crossingsData.length} crossings to SVG coordinates using GPS-based mapping`);
     }
 
     async getRecentCloudDetections() {
@@ -401,34 +462,44 @@ class CloudMigrationApp {
         const svg = document.getElementById('border-svg');
         if (!svg || !this.crossingsData) return;
 
-        // Create a group for coordinate markers
+        // Remove existing markers if they exist
+        const existingMarkers = document.getElementById('coordinate-markers');
+        if (existingMarkers) {
+            existingMarkers.remove();
+        }
+
+        // Create a group for coordinate markers with high z-index
         const markersGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         markersGroup.id = 'coordinate-markers';
+        markersGroup.style.zIndex = '1001'; // Above satellite images
         
         this.crossingsData.forEach((crossing, index) => {
-            // Create red dot for each crossing
+            // Create red dot for each crossing (larger for visibility)
             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', crossing.svgX);
             circle.setAttribute('cy', crossing.svgY);
-            circle.setAttribute('r', '3');
+            circle.setAttribute('r', '5'); // Larger radius
             circle.setAttribute('fill', 'red');
-            circle.setAttribute('stroke', 'darkred');
-            circle.setAttribute('stroke-width', '1');
-            circle.setAttribute('opacity', '0.8');
+            circle.setAttribute('stroke', 'white');
+            circle.setAttribute('stroke-width', '2');
+            circle.setAttribute('opacity', '0.9');
             
             // Add tooltip with crossing info
             const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            title.textContent = `${crossing.name} (${crossing.coordinates.lat.toFixed(4)}, ${crossing.coordinates.lon.toFixed(4)})`;
+            title.textContent = `${index + 1}: ${crossing.name} (${crossing.coordinates.lat.toFixed(4)}, ${crossing.coordinates.lon.toFixed(4)})`;
             circle.appendChild(title);
             
-            // Add number label next to dot
+            // Add number label with better visibility
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            text.setAttribute('x', crossing.svgX + 6);
-            text.setAttribute('y', crossing.svgY + 2);
+            text.setAttribute('x', crossing.svgX + 8);
+            text.setAttribute('y', crossing.svgY + 4);
             text.setAttribute('font-family', 'Arial, sans-serif');
-            text.setAttribute('font-size', '10');
+            text.setAttribute('font-size', '12');
             text.setAttribute('fill', 'red');
             text.setAttribute('font-weight', 'bold');
+            text.setAttribute('stroke', 'white');
+            text.setAttribute('stroke-width', '0.5');
+            text.setAttribute('paint-order', 'stroke fill');
             text.textContent = index + 1;
             
             markersGroup.appendChild(circle);
@@ -436,7 +507,7 @@ class CloudMigrationApp {
         });
         
         svg.appendChild(markersGroup);
-        console.log(`Added ${this.crossingsData.length} red coordinate markers to SVG`);
+        console.log(`Added ${this.crossingsData.length} debug coordinate markers to SVG`);
     }
 
     createHoverZones() {
@@ -518,7 +589,7 @@ class CloudMigrationApp {
         img.className = 'satellite-image';
         
         // Use specific border cloud image from public/images/crossings/
-        const borderNumber = crossing.index + 1;
+        const borderNumber = crossing.index.toString().padStart(2, '0');
         // Get the most recent image for this border
         img.src = `/api/crossing-image/${borderNumber}`;
         img.alt = `Satellite image at ${crossing.name}`;
@@ -539,7 +610,7 @@ class CloudMigrationApp {
         
         // Add error handling for missing images
         img.onerror = () => {
-            console.warn(`Could not load image for crossing ${crossing.index + 1}: ${crossing.name}`);
+            console.warn(`Could not load image for crossing ${crossing.index.toString().padStart(2, '0')}: ${crossing.name}`);
             img.src = './cumulus_reference/1_cumulus_landing.png'; // Fallback to reference image
         };
         
@@ -589,7 +660,7 @@ class CloudMigrationApp {
         img.className = 'satellite-image panel-triggered';
         
         // Use specific border cloud image
-        const borderNumber = crossing.index + 1;
+        const borderNumber = crossing.index.toString().padStart(2, '0');
         img.src = `/api/crossing-image/${borderNumber}`;
         img.alt = `Satellite image at ${crossing.name}`;
         
@@ -615,7 +686,7 @@ class CloudMigrationApp {
         
         // Add error handling for missing images
         img.onerror = () => {
-            console.warn(`Could not load image for crossing ${crossing.index + 1}: ${crossing.name}`);
+            console.warn(`Could not load image for crossing ${crossing.index.toString().padStart(2, '0')}: ${crossing.name}`);
             img.src = './cumulus_reference/1_cumulus_landing.png';
         };
         
@@ -978,6 +1049,7 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
                 const crossing = this.crossingsData[detection.crossingIndex];
                 if (crossing) {
                     this.showPanelTriggeredImage(crossing);
+                    this.bringImageToTop(crossing); // Bring this image to top
                     this.drawConnectionLine(li, crossing); // Pass the li element
                 }
             });
@@ -1165,6 +1237,11 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             this.handleRealTimeImageUpdate(data);
         });
         
+        this.socket.on('frontera-updated', (data) => {
+            console.log('🖼️ Frontera update:', data.type, data.filename);
+            this.handleFronteraUpdate(data);
+        });
+        
         this.socket.on('error', (error) => {
             console.error('Socket.IO error:', error);
         });
@@ -1192,6 +1269,38 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             
             // Refresh the panel data
             await this.refreshPanelData();
+        }
+    }
+    
+    async handleFronteraUpdate(updateData) {
+        const { type, filename } = updateData;
+        
+        if (type === 'added') {
+            console.log(`🖼️ New frontera image available: ${filename}`);
+            // If border analysis is currently visible, update it with the new image
+            if (this.borderAnalysisVisible) {
+                await this.refreshBorderAnalysisImage();
+            }
+        } else if (type === 'removed') {
+            console.log(`🗑️ Frontera image removed: ${filename}`);
+            // If the currently displayed image was removed, hide it
+            if (this.borderAnalysisVisible && this.borderAnalysisElement) {
+                const currentSrc = this.borderAnalysisElement.src;
+                if (currentSrc.includes(filename)) {
+                    this.hideBorderAnalysisImage();
+                }
+            }
+        }
+    }
+    
+    async refreshBorderAnalysisImage() {
+        if (!this.borderAnalysisVisible) return;
+        
+        const latestImagePath = await this.getLatestFronteraImage();
+        if (latestImagePath && this.borderAnalysisElement) {
+            // Update the source of the current image
+            this.borderAnalysisElement.src = latestImagePath;
+            console.log('🔄 Updated border analysis image with latest');
         }
     }
     
@@ -1286,6 +1395,7 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
                         const crossing = this.crossingsData[detection.crossingIndex];
                         if (crossing) {
                             this.showPanelTriggeredImage(crossing);
+                            this.bringImageToTop(crossing); // Bring this image to top
                             this.drawConnectionLine(li, crossing);
                         }
                     });
@@ -1324,6 +1434,27 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             if (event.key.toLowerCase() === 's') {
                 console.log('📸 S key pressed - showing all available images');
                 this.toggleShowAllMode();
+            } else if (event.key.toLowerCase() === 'b') {
+                console.log('🖼️ B key pressed - showing latest border analysis');
+                this.toggleBorderAnalysisImage();
+            } else if (this.borderAnalysisVisible) {
+                console.log('🔽 Key pressed - hiding border analysis');
+                this.hideBorderAnalysisImage();
+            }
+        });
+        
+        // Add global event listeners for hiding border analysis image
+        document.addEventListener('click', () => {
+            if (this.borderAnalysisVisible) {
+                console.log('🔽 Click detected - hiding border analysis');
+                this.hideBorderAnalysisImage();
+            }
+        });
+        
+        document.addEventListener('scroll', () => {
+            if (this.borderAnalysisVisible) {
+                console.log('🔽 Scroll detected - hiding border analysis');
+                this.hideBorderAnalysisImage();
             }
         });
     }
@@ -1371,7 +1502,7 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         img.className = 'satellite-image show-all-mode';
         
         // Use specific border cloud image
-        const borderNumber = crossing.index + 1;
+        const borderNumber = crossing.index.toString().padStart(2, '0');
         img.src = `/api/crossing-image/${borderNumber}`;
         img.alt = `Satellite image at ${crossing.name}`;
         
@@ -1397,7 +1528,7 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         
         // Add error handling for missing images
         img.onerror = () => {
-            console.warn(`Could not load image for crossing ${crossing.index + 1}: ${crossing.name}`);
+            console.warn(`Could not load image for crossing ${crossing.index.toString().padStart(2, '0')}: ${crossing.name}`);
             img.src = './cumulus_reference/1_cumulus_landing.png';
         };
         
@@ -1717,6 +1848,29 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         }
     }
 
+    bringImageToTop(crossing) {
+        // Find the image for this crossing
+        const matchingImages = this.visibleImages.filter(img => 
+            img.crossing.index === crossing.index
+        );
+        
+        if (matchingImages.length > 0) {
+            // Reset all image z-indexes to default
+            this.visibleImages.forEach(imageData => {
+                if (imageData.element && imageData.element.style) {
+                    imageData.element.style.zIndex = '8'; // Default z-index
+                }
+            });
+            
+            // Bring the hovered image to the top
+            matchingImages.forEach(imageData => {
+                if (imageData.element && imageData.element.style) {
+                    imageData.element.style.zIndex = '20'; // Higher than default
+                }
+            });
+        }
+    }
+
     setupPinchZoom() {
         const zoomContainer = document.getElementById('border-container');
         
@@ -1774,6 +1928,127 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         container.style.transformOrigin = 'center center';
         
         // No need to update positions since everything scales together now
+    }
+
+    async getLatestFronteraImage() {
+        try {
+            // Get list of files in the frontera directory
+            const response = await fetch('/api/frontera-list');
+            if (response.ok) {
+                const responseText = await response.text();
+                // Check if response is JSON
+                if (responseText.startsWith('[') || responseText.startsWith('{')) {
+                    const imageFiles = JSON.parse(responseText);
+                    console.log(`Found ${imageFiles.length} frontera images`);
+                    
+                    if (imageFiles.length > 0) {
+                        // Sort by filename (which includes timestamp) to get the latest
+                        imageFiles.sort();
+                        const latestImage = imageFiles[imageFiles.length - 1];
+                        console.log(`Latest frontera image: ${latestImage}`);
+                        return `/public/images/frontera/${latestImage}`;
+                    } else {
+                        console.log('No frontera images found');
+                        return null;
+                    }
+                } else {
+                    console.warn('Server returned HTML instead of JSON - endpoint may not exist');
+                    return this.getFallbackFronteraImage();
+                }
+            } else {
+                console.warn('Could not fetch frontera images list');
+                return this.getFallbackFronteraImage();
+            }
+        } catch (error) {
+            console.error('Error fetching latest frontera image:', error);
+            return this.getFallbackFronteraImage();
+        }
+    }
+
+    getFallbackFronteraImage() {
+        // Fallback: use a predictable pattern based on current date/time
+        // This assumes the frontera images follow a timestamp pattern like the ones we saw
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        
+        // Try to construct the most likely recent filename based on the pattern we observed
+        // Since we can't get the exact list, we'll try the most recent timestamp we saw
+        const fallbackImage = `2025-08-24 01:00:04.984997.jpg`;
+        console.log(`Using fallback frontera image: ${fallbackImage}`);
+        return `/public/images/frontera/${fallbackImage}`;
+    }
+
+    async toggleBorderAnalysisImage() {
+        if (this.borderAnalysisVisible) {
+            this.hideBorderAnalysisImage();
+        } else {
+            await this.showBorderAnalysisImage();
+        }
+    }
+
+    async showBorderAnalysisImage() {
+        if (this.borderAnalysisVisible) return;
+
+        const latestImagePath = await this.getLatestFronteraImage();
+        if (!latestImagePath) {
+            console.warn('No border analysis image available');
+            return;
+        }
+
+        // Create image element
+        const img = document.createElement('img');
+        img.className = 'border-analysis-image';
+        img.src = latestImagePath;
+        img.alt = 'Latest border analysis';
+        
+        // Style the image to be centered and 98% width
+        img.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 98%;
+            max-width: 1470px;
+            height: auto;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+
+        // Add error handling
+        img.onerror = () => {
+            console.error('Failed to load border analysis image');
+            this.hideBorderAnalysisImage();
+        };
+
+        // Add to document
+        document.body.appendChild(img);
+        this.borderAnalysisElement = img;
+        this.borderAnalysisVisible = true;
+
+        // Fade in
+        setTimeout(() => {
+            img.style.opacity = '1';
+        }, 50);
+    }
+
+    hideBorderAnalysisImage() {
+        if (!this.borderAnalysisVisible || !this.borderAnalysisElement) return;
+
+        // Fade out
+        this.borderAnalysisElement.style.opacity = '0';
+        
+        // Remove after transition
+        setTimeout(() => {
+            if (this.borderAnalysisElement && this.borderAnalysisElement.parentNode) {
+                this.borderAnalysisElement.parentNode.removeChild(this.borderAnalysisElement);
+            }
+            this.borderAnalysisElement = null;
+            this.borderAnalysisVisible = false;
+        }, 300);
     }
 }
 

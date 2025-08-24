@@ -118,7 +118,8 @@ try:
         limit=140
         if p_c[0] >= limit and  p_c[1] >= limit and p_c[2] >= limit:
             # Mark clouds with blue dots
-            cv2.circle(clouds_cv,(pix["x"],pix["y"]),3,(255,0,0),-1)
+            adjusted_y = int(250 + (pix["y"] - 250) * 0.83)  # Compress Y around center
+            cv2.circle(clouds_cv,(pix["x"],adjusted_y),3,(255,0,0),-1)
             cloud_crossings.append({
                 'index': index,
                 'point': pix,
@@ -127,7 +128,8 @@ try:
             })
         else:
             # Mark clear skies with green dots
-            cv2.circle(clouds_cv,(pix["x"],pix["y"]),3,(0,255,0),-1)
+            adjusted_y = int(250 + (pix["y"] - 250) * 0.83)  # Compress Y around center
+            cv2.circle(clouds_cv,(pix["x"],adjusted_y),3,(0,255,0),-1)
     
     print("Cloudy crossings found: "+ str(len(cloud_crossings)))
     
@@ -157,11 +159,12 @@ try:
         border_index = crossing['index']
         
         # Mark selected crossing with larger red circle
-        cv2.circle(clouds_cv,(pix["x"],pix["y"]),8,(0,0,255),-1)
+        adjusted_y = int(250 + (pix["y"] - 250) * 0.83)  # Compress Y around center
+        cv2.circle(clouds_cv,(pix["x"],adjusted_y),8,(0,0,255),-1)
         # Generate high-resolution zoomed image for this crossing
         # Finding the abs map point relative to selection
         abs_x = bprderBB[0] - (bprderBB[0] - bprderBB[2]) / 1000 * pix["x"]
-        abs_y = bprderBB[1] - (bprderBB[1] - bprderBB[3]) / 500 * pix["y"]
+        abs_y = bprderBB[1] - (bprderBB[1] - bprderBB[3]) / 500 * pix["y"] * 0.95
         
         # High-resolution image parameters (240x400 as requested)
         crossing_w = 240
@@ -222,7 +225,7 @@ try:
         first_crossing = selected_crossings[0]
         pix = first_crossing['point']
         abs_x = bprderBB[0] - (bprderBB[0] - bprderBB[2]) / 1000 * pix["x"]
-        abs_y = bprderBB[1] - (bprderBB[1] - bprderBB[3]) / 500 * pix["y"]
+        abs_y = bprderBB[1] - (bprderBB[1] - bprderBB[3]) / 500 * pix["y"] * 0.95
         
         clouds_w = 528
         clouds_h = 880

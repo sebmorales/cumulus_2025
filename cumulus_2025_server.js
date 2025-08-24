@@ -60,6 +60,28 @@ app.get('/api/crossings-list', (req, res) => {
     }
 });
 
+// List all available frontera (border analysis) images
+app.get('/api/frontera-list', (req, res) => {
+    const fs = require('fs');
+    const fronteraDir = path.join(__dirname, 'public', 'images', 'frontera');
+    
+    try {
+        if (!fs.existsSync(fronteraDir)) {
+            return res.json([]);
+        }
+        
+        const files = fs.readdirSync(fronteraDir);
+        const imageFiles = files.filter(file => 
+            file.endsWith('.jpg') || file.endsWith('.jpeg') || file.endsWith('.png')
+        );
+        
+        res.json(imageFiles);
+    } catch (error) {
+        console.error('Error listing frontera images:', error);
+        res.status(500).json({ error: 'Failed to list frontera images' });
+    }
+});
+
 // Get available cloud images for a specific border from crossings directory
 app.get('/api/crossing-image/:borderNumber', (req, res) => {
     const fs = require('fs');
@@ -139,6 +161,7 @@ io.on('connection', (socket) => {
 
 // File watching for real-time updates
 const cloudsDir = path.join(__dirname, 'public', 'images', 'crossings');
+const fronteraDir = path.join(__dirname, 'public', 'images', 'frontera');
 
 function getCurrentImageList() {
     const fs = require('fs');
@@ -197,6 +220,44 @@ if (require('fs').existsSync(cloudsDir)) {
     console.log(`Watching for cloud image changes in: ${cloudsDir}`);
 } else {
     console.log(`Crossings directory not found: ${cloudsDir} - will create when needed`);
+}
+
+// Also watch the frontera directory for border analysis images
+if (require('fs').existsSync(fronteraDir)) {
+    const fronteraWatcher = chokidar.watch(fronteraDir, {
+        ignored: /^\./, // ignore dotfiles
+        persistent: true,
+        ignoreInitial: true // don't emit events for existing files on startup
+    });
+
+    fronteraWatcher
+        .on('add', (filePath) => {
+            const filename = path.basename(filePath);
+            if (filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
+                console.log(`New frontera image detected: ${filename}`);
+                io.emit('frontera-updated', {
+                    type: 'added',
+                    filename: filename
+                });
+            }
+        })
+        .on('unlink', (filePath) => {
+            const filename = path.basename(filePath);
+            if (filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
+                console.log(`Frontera image removed: ${filename}`);
+                io.emit('frontera-updated', {
+                    type: 'removed',
+                    filename: filename
+                });
+            }
+        })
+        .on('error', (error) => {
+            console.error('Frontera file watcher error:', error);
+        });
+
+    console.log(`Watching for frontera image changes in: ${fronteraDir}`);
+} else {
+    console.log(`Frontera directory not found: ${fronteraDir} - will create when needed`);
 }
 
 server.listen(PORT, () => {
