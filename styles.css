@@ -410,3 +410,46 @@ body::-webkit-scrollbar {
         height: 44px !important;
     }
 }
+
+/* Instructions message and popup - Desktop only */
+.instructions-message {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    color: black;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    font-style: italic;
+    z-index: 100;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.instructions-popup {
+    position: fixed;
+    bottom: 60px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.95);
+    color: black;
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    z-index: 1000;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    line-height: 1.4;
+}
+
+.instructions-popup div {
+    margin-bottom: 8px;
+}
+
+/* Hide instructions on mobile */
+@media (max-width: 768px) {
+    .instructions-message,
+    .instructions-popup {
+        display: none !important;
+    }
+}

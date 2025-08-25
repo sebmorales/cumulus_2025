@@ -44,6 +44,11 @@ class CloudMigrationApp {
         this.zoomCenter = { x: 0, y: 0 }; // Center point for zoom
         this.borderAnalysisVisible = false; // Track border analysis image visibility
         this.borderAnalysisElement = null; // Track border analysis DOM element
+        this.instructionsVisible = false; // Track instructions popup visibility
+        this.instructionsElement = null; // Track instructions DOM element
+        this.instructionsMessageElement = null; // Track instructions message element
+        this.videoVisible = false; // Track video visibility
+        this.videoElement = null; // Track video DOM element
         
         this.init();
     }
@@ -52,6 +57,12 @@ class CloudMigrationApp {
         // Use sentences from sentences.js if available, otherwise fallback to CONFIG
         if (typeof sentences !== 'undefined') {
             CONFIG.SENTENCES = sentences;
+        }
+        
+        // Update description from sentences.js if available
+        if (typeof description !== 'undefined') {
+            const linkUrl = typeof link_description !== 'undefined' ? link_description : null;
+            this.updateDescription(description, linkUrl);
         }
         
         await this.loadData();
@@ -65,7 +76,41 @@ class CloudMigrationApp {
         this.initializeSocketIO();
         this.setupKeyboardListeners();
         this.setupTouchDragListeners();
+        this.setupInstructionsMessage();
         // this.setupPinchZoom(); // Disabled for now
+    }
+
+    updateDescription(descriptionText, linkUrl) {
+        const rightPanel = document.getElementById('right-panel');
+        if (rightPanel) {
+            // Find the paragraph elements and replace their content
+            const paragraphs = rightPanel.querySelectorAll('p');
+            
+            // Clear existing paragraphs
+            paragraphs.forEach(p => p.remove());
+            
+            // Split description into paragraphs and add them
+            const paragraphTexts = descriptionText.split('\n\n');
+            paragraphTexts.forEach(paragraphText => {
+                if (paragraphText.trim()) {
+                    const p = document.createElement('p');
+                    
+                    // Check if this paragraph contains "Click here" and we have a link
+                    if (linkUrl && paragraphText.includes('Click here')) {
+                        // Replace "Click here" with a hyperlink
+                        const linkText = paragraphText.replace(
+                            'Click here',
+                            `<a href="${linkUrl}" target="_blank" rel="noopener noreferrer">Click here</a>`
+                        );
+                        p.innerHTML = linkText.trim();
+                    } else {
+                        p.textContent = paragraphText.trim();
+                    }
+                    
+                    rightPanel.appendChild(p);
+                }
+            });
+        }
     }
 
     async loadData() {
@@ -403,14 +448,14 @@ class CloudMigrationApp {
                     parseInt(second)
                 ));
                 
-                const crossing = this.crossingsData[borderNumber - 1];
+                const crossing = this.crossingsData[borderNumber];
                 if (crossing) {
                     const now = new Date();
                     const timeDiffMs = now.getTime() - timestamp.getTime();
                     const timeDiffHours = Math.floor(timeDiffMs / (60 * 60 * 1000));
                     
                     detections.push({
-                        crossingIndex: borderNumber - 1,
+                        crossingIndex: borderNumber,
                         crossingName: crossing.name,
                         borderNumber: borderNumber,
                         timestamp: timestamp.toISOString(),
@@ -589,6 +634,7 @@ class CloudMigrationApp {
         img.className = 'satellite-image';
         
         // Use specific border cloud image from public/images/crossings/
+        // Note: both crossing.index and filenames are 0-based (border_00_ to border_50_)
         const borderNumber = crossing.index.toString().padStart(2, '0');
         // Get the most recent image for this border
         img.src = `/api/crossing-image/${borderNumber}`;
@@ -660,6 +706,7 @@ class CloudMigrationApp {
         img.className = 'satellite-image panel-triggered';
         
         // Use specific border cloud image
+        // Note: both crossing.index and filenames are 0-based (border_00_ to border_50_)
         const borderNumber = crossing.index.toString().padStart(2, '0');
         img.src = `/api/crossing-image/${borderNumber}`;
         img.alt = `Satellite image at ${crossing.name}`;
@@ -766,6 +813,19 @@ class CloudMigrationApp {
         const totalChars = chars.length;
         let spacing = this.pathLength / totalChars; // Divide entire path length by character count
         
+        // Apply minimum spacing based on screen size to maintain consistent kerning
+        const screenWidth = window.innerWidth;
+        let minSpacing;
+        if (screenWidth <= 480) {
+            minSpacing = 8; // Minimum spacing for very small screens
+        } else if (screenWidth <= 768) {
+            minSpacing = 12; // Minimum spacing for mobile screens
+        } else {
+            minSpacing = 16; // Minimum spacing for larger screens
+        }
+        
+        spacing = Math.max(spacing, minSpacing);
+        
         // Place each character along the path, evenly distributed
         for (let i = 0; i < totalChars; i++) {
             const char = chars[i];
@@ -862,6 +922,19 @@ class CloudMigrationApp {
         const totalChars = chars.length;
         let spacing = this.outlinePathLength / totalChars; // Divide entire path length by character count
         
+        // Apply minimum spacing based on screen size to maintain consistent kerning
+        const screenWidth = window.innerWidth;
+        let minSpacing;
+        if (screenWidth <= 480) {
+            minSpacing = 6; // Slightly smaller minimum for outline text on very small screens
+        } else if (screenWidth <= 768) {
+            minSpacing = 10; // Minimum spacing for mobile screens
+        } else {
+            minSpacing = 14; // Minimum spacing for larger screens
+        }
+        
+        spacing = Math.max(spacing, minSpacing);
+        
         // Place each character along the outline path, evenly distributed
         for (let i = 0; i < totalChars; i++) {
             const char = chars[i];
@@ -947,6 +1020,19 @@ class CloudMigrationApp {
         const totalChars = chars.length;
         let spacing = this.outlinePathLength / totalChars; // Same logic as displayTextAlongOutline
         
+        // Apply minimum spacing based on screen size to maintain consistent kerning
+        const screenWidth = window.innerWidth;
+        let minSpacing;
+        if (screenWidth <= 480) {
+            minSpacing = 6; // Slightly smaller minimum for outline text on very small screens
+        } else if (screenWidth <= 768) {
+            minSpacing = 10; // Minimum spacing for mobile screens
+        } else {
+            minSpacing = 14; // Minimum spacing for larger screens
+        }
+        
+        spacing = Math.max(spacing, minSpacing);
+        
         chars.forEach((char, index) => {
             const distance = (index + 0.5) * spacing; // Same logic as displayTextAlongOutline
             const point = this.outlinePath.getPointAtLength(Math.min(distance, this.outlinePathLength));
@@ -973,6 +1059,19 @@ class CloudMigrationApp {
         const chars = document.querySelectorAll('.border-char');
         const totalChars = chars.length;
         let spacing = this.pathLength / totalChars; // Same logic as displayTextAlongPath
+        
+        // Apply minimum spacing based on screen size to maintain consistent kerning
+        const screenWidth = window.innerWidth;
+        let minSpacing;
+        if (screenWidth <= 480) {
+            minSpacing = 8; // Minimum spacing for very small screens
+        } else if (screenWidth <= 768) {
+            minSpacing = 12; // Minimum spacing for mobile screens
+        } else {
+            minSpacing = 16; // Minimum spacing for larger screens
+        }
+        
+        spacing = Math.max(spacing, minSpacing);
         
         chars.forEach((char, index) => {
             const distance = (index + 0.5) * spacing; // Same logic as displayTextAlongPath
@@ -1431,23 +1530,38 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
 
     setupKeyboardListeners() {
         document.addEventListener('keydown', (event) => {
-            if (event.key.toLowerCase() === 's') {
+            if (event.key.toLowerCase() === 'i') {
+                this.toggleInstructions();
+            } else if (event.key.toLowerCase() === 's') {
                 console.log('📸 S key pressed - showing all available images');
                 this.toggleShowAllMode();
             } else if (event.key.toLowerCase() === 'b') {
                 console.log('🖼️ B key pressed - showing latest border analysis');
                 this.toggleBorderAnalysisImage();
+            } else if (event.key.toLowerCase() === 'v') {
+                console.log('🎥 V key pressed - toggling video');
+                this.toggleVideo();
             } else if (this.borderAnalysisVisible) {
                 console.log('🔽 Key pressed - hiding border analysis');
                 this.hideBorderAnalysisImage();
+            } else if (this.instructionsVisible) {
+                this.hideInstructions();
+            } else if (this.videoVisible) {
+                this.hideVideo();
             }
         });
         
-        // Add global event listeners for hiding border analysis image
-        document.addEventListener('click', () => {
+        // Add global event listeners for hiding border analysis image and instructions
+        document.addEventListener('click', (e) => {
             if (this.borderAnalysisVisible) {
                 console.log('🔽 Click detected - hiding border analysis');
                 this.hideBorderAnalysisImage();
+            }
+            if (this.instructionsVisible) {
+                this.hideInstructions();
+            }
+            if (this.videoVisible) {
+                this.hideVideo();
             }
         });
         
@@ -1455,6 +1569,12 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             if (this.borderAnalysisVisible) {
                 console.log('🔽 Scroll detected - hiding border analysis');
                 this.hideBorderAnalysisImage();
+            }
+            if (this.instructionsVisible) {
+                this.hideInstructions();
+            }
+            if (this.videoVisible) {
+                this.hideVideo();
             }
         });
     }
@@ -1477,8 +1597,15 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             const allDetections = await this.getRecentCloudDetections();
             console.log(`📸 Showing all ${allDetections.length} available images`);
             
-            // Show an image for each detection (reverse order so most recent renders last and appears on top)
-            allDetections.reverse().forEach(detection => {
+            // Sort oldest to newest for rendering, so newest images appear on top
+            const sortedDetections = [...allDetections].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            console.log(`📸 Total crossings in data: ${this.crossingsData.length}`);
+            console.log(`📸 Total detections found: ${allDetections.length}`);
+            console.log(`📸 Border numbers found:`, allDetections.map(d => d.borderNumber).sort((a,b) => a-b));
+            console.log(`📸 Rendering order (oldest to newest):`, sortedDetections.map(d => `Border ${d.borderNumber} at ${d.timestamp}`));
+            
+            sortedDetections.forEach(detection => {
                 const crossing = this.crossingsData[detection.crossingIndex];
                 if (crossing) {
                     this.showShowAllModeImage(crossing, detection);
@@ -1495,13 +1622,19 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         const existingShowAllImage = this.visibleImages.find(img => 
             img.crossing.index === crossing.index && img.showAllMode
         );
-        if (existingShowAllImage) return;
+        if (existingShowAllImage) {
+            console.log(`⚠️ Skipping duplicate for Border ${crossing.index} (${crossing.name})`);
+            return;
+        }
+
+        console.log(`🖼️ Showing image for Border ${crossing.index} (${crossing.name}) - timestamp: ${detection.timestamp} - filename: ${detection.filename}`);
 
         // Create image element
         const img = document.createElement('img');
         img.className = 'satellite-image show-all-mode';
         
         // Use specific border cloud image
+        // Note: both crossing.index and filenames are 0-based (border_00_ to border_50_)
         const borderNumber = crossing.index.toString().padStart(2, '0');
         img.src = `/api/crossing-image/${borderNumber}`;
         img.alt = `Satellite image at ${crossing.name}`;
@@ -1601,7 +1734,7 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         }
         
         const borderNumber = parseInt(match[1]);
-        const crossingIndex = borderNumber - 1;
+        const crossingIndex = borderNumber;
         const crossing = this.crossingsData[crossingIndex];
         
         if (!crossing) {
@@ -1641,7 +1774,7 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         const detection = {
             crossingIndex: crossing.index,
             crossingName: crossing.name,
-            borderNumber: crossing.index + 1,
+            borderNumber: crossing.index,
             filename: filename,
             hasImage: true
         };
@@ -1672,6 +1805,8 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
                         leftPanel.classList.remove('hidden');
                         rightPanel.classList.remove('hidden');
                         morakanaLogo.classList.add('visible');
+                        // Hide instructions message when panels are visible
+                        this.hideInstructionsMessage();
                         // Stop 15-second timers when panels are shown again
                         this.stopPersistentImageTimers();
                         this.panelsVisible = true;
@@ -1682,6 +1817,8 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
                         leftPanel.classList.add('hidden');
                         rightPanel.classList.add('hidden');
                         morakanaLogo.classList.remove('visible');
+                        // Show instructions message when panels are hidden
+                        this.showInstructionsMessage();
                         // Clear connection lines when panels are closed/hidden
                         this.clearConnectionLines();
                         // Start 15-second timer for persistent images
@@ -1834,6 +1971,8 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
                 rightPanel.classList.remove('hidden');
             }
             morakanaLogo.classList.add('visible');
+            // Hide instructions message when panels are visible
+            this.hideInstructionsMessage();
             // Stop 15-second timers when panels are shown
             this.stopPersistentImageTimers();
         } else {
@@ -1841,6 +1980,8 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             leftPanel.classList.add('hidden');
             rightPanel.classList.add('hidden');
             morakanaLogo.classList.remove('visible');
+            // Show instructions message when panels are hidden
+            this.showInstructionsMessage();
             // Clear connection lines when panels are hidden
             this.clearConnectionLines();
             // Start 15-second timer for persistent images
@@ -2003,13 +2144,21 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
         img.src = latestImagePath;
         img.alt = 'Latest border analysis';
         
-        // Style the image to be centered and 98% width
+        // Use 85% of screen width regardless of screen size
+        const screenWidth = window.innerWidth;
+        const widthPercent = 85;
+        
+        console.log(`Screen: ${screenWidth}px, Using: ${widthPercent}%`);
+        
+        const width = `${widthPercent}%`;
+        const maxWidth = 'none';
+        
         img.style.cssText = `
             position: fixed;
             top: 50%;
             left: 50%;
-            width: 98%;
-            max-width: 1470px;
+            width: ${width};
+            max-width: ${maxWidth};
             height: auto;
             transform: translate(-50%, -50%);
             z-index: 1000;
@@ -2049,6 +2198,190 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             this.borderAnalysisElement = null;
             this.borderAnalysisVisible = false;
         }, 300);
+    }
+
+    setupInstructionsMessage() {
+        // Only show on desktop (width > 768px)
+        if (window.innerWidth <= 768) return;
+
+        // Create instructions message
+        const message = document.createElement('div');
+        message.className = 'instructions-message';
+        message.textContent = 'Press "i" to display instructions';
+
+        document.body.appendChild(message);
+        this.instructionsMessageElement = message;
+    }
+
+    toggleInstructions() {
+        if (this.instructionsVisible) {
+            this.hideInstructions();
+        } else {
+            this.showInstructions();
+        }
+    }
+
+    showInstructions() {
+        // Only show on desktop
+        if (window.innerWidth <= 768) return;
+        if (this.instructionsVisible) return;
+
+        // Get instructions from sentences.js if available, otherwise use fallback
+        let instructionsText = `
+            <div>• Press "s" to show all latests crossings</div>
+            <div>• Press "b" to display the last border analysis</div>
+            <div>• Scroll down to reveal more information</div>
+        `;
+        
+        if (typeof instructions !== 'undefined') {
+            // Convert the instructions string to HTML format
+            const instructionLines = instructions.trim().split('\n').filter(line => line.trim());
+            instructionsText = instructionLines.map(line => `<div>${line.trim()}</div>`).join('');
+        }
+
+        // Create instructions popup
+        const popup = document.createElement('div');
+        popup.className = 'instructions-popup';
+        popup.innerHTML = instructionsText;
+
+        document.body.appendChild(popup);
+        this.instructionsElement = popup;
+        this.instructionsVisible = true;
+
+        // Hide the instructions message forever
+        if (this.instructionsMessageElement) {
+            this.instructionsMessageElement.style.opacity = '0';
+            setTimeout(() => {
+                if (this.instructionsMessageElement && this.instructionsMessageElement.parentNode) {
+                    this.instructionsMessageElement.parentNode.removeChild(this.instructionsMessageElement);
+                    this.instructionsMessageElement = null;
+                }
+            }, 300);
+        }
+
+        // Animate in
+        setTimeout(() => {
+            popup.style.opacity = '1';
+            popup.style.transform = 'translateY(0)';
+        }, 50);
+    }
+
+    hideInstructions() {
+        if (!this.instructionsVisible || !this.instructionsElement) return;
+
+        // Fade out
+        this.instructionsElement.style.opacity = '0';
+        this.instructionsElement.style.transform = 'translateY(20px)';
+        
+        // Don't show the instructions message again - it's gone forever
+
+        // Remove after transition
+        setTimeout(() => {
+            if (this.instructionsElement && this.instructionsElement.parentNode) {
+                this.instructionsElement.parentNode.removeChild(this.instructionsElement);
+            }
+            this.instructionsElement = null;
+            this.instructionsVisible = false;
+        }, 300);
+    }
+
+    hideInstructionsMessage() {
+        if (this.instructionsMessageElement) {
+            this.instructionsMessageElement.style.opacity = '0';
+        }
+    }
+
+    showInstructionsMessage() {
+        // Only show on desktop and if message still exists
+        if (window.innerWidth <= 768 || !this.instructionsMessageElement) return;
+        
+        this.instructionsMessageElement.style.opacity = '1';
+    }
+
+    toggleVideo() {
+        if (this.videoVisible) {
+            this.hideVideo();
+        } else {
+            this.showVideo();
+        }
+    }
+
+    showVideo() {
+        if (this.videoVisible) return;
+
+        // Get video link from sentences.js if available
+        let videoUrl = null;
+        if (typeof video_link !== 'undefined') {
+            videoUrl = video_link;
+        }
+
+        if (!videoUrl) {
+            console.warn('No video link available');
+            return;
+        }
+
+        // Create video container
+        const videoContainer = document.createElement('div');
+        videoContainer.className = 'video-container';
+        videoContainer.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1001;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+
+        // Create iframe for Vimeo video
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = `
+            width: 90%;
+            height: 90%;
+            max-width: 1200px;
+            max-height: 675px;
+            border: none;
+        `;
+        
+        // Convert Vimeo URL to embed format
+        const vimeoId = videoUrl.split('/').pop();
+        iframe.src = `https://player.vimeo.com/video/${vimeoId}?autoplay=1`;
+        iframe.allow = 'autoplay; fullscreen; picture-in-picture';
+
+        videoContainer.appendChild(iframe);
+        document.body.appendChild(videoContainer);
+        
+        this.videoElement = videoContainer;
+        this.videoVisible = true;
+
+        // Fade in
+        setTimeout(() => {
+            videoContainer.style.opacity = '1';
+        }, 50);
+
+        console.log('🎥 Video shown');
+    }
+
+    hideVideo() {
+        if (!this.videoVisible || !this.videoElement) return;
+
+        // Fade out
+        this.videoElement.style.opacity = '0';
+        
+        // Remove after transition
+        setTimeout(() => {
+            if (this.videoElement && this.videoElement.parentNode) {
+                this.videoElement.parentNode.removeChild(this.videoElement);
+            }
+            this.videoElement = null;
+            this.videoVisible = false;
+        }, 300);
+
+        console.log('🎥 Video hidden');
     }
 }
 
