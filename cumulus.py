@@ -25,6 +25,59 @@ import dithering
 
 from io import BytesIO
 
+# Duplicate detection functions (from remove_duplicates.py)
+def get_image_signature(img, max_dim=64):
+    """Get a small thumbnail signature for comparison. Accepts PIL Image or filepath.
+    Maintains aspect ratio - scales so largest dimension is max_dim."""
+    try:
+        if isinstance(img, str):
+            img = Image.open(img)
+        # Calculate new size maintaining aspect ratio
+        w, h = img.size
+        if w > h:
+            new_w = max_dim
+            new_h = max(1, int(h * max_dim / w))
+        else:
+            new_h = max_dim
+            new_w = max(1, int(w * max_dim / h))
+        # Convert to grayscale and resize maintaining aspect ratio
+        thumb = img.convert('L').resize((new_w, new_h), Image.LANCZOS)
+        return list(thumb.getdata())
+    except Exception as e:
+        print(f"Error getting image signature: {e}")
+        return None
+
+def compare_signatures(sig1, sig2):
+    """
+    Compare two image signatures.
+    Returns similarity as percentage (0-100).
+    100 = identical, 0 = completely different.
+    """
+    if sig1 is None or sig2 is None:
+        return 0
+    if len(sig1) != len(sig2):
+        # Different aspect ratios - not comparable
+        return 0
+    total_diff = sum(abs(a - b) for a, b in zip(sig1, sig2))
+    max_diff = 255 * len(sig1)
+    similarity = 100 * (1 - total_diff / max_diff)
+    return similarity
+
+def is_duplicate_image(new_img, existing_path, threshold=99.5):
+    """
+    Check if new_img is a duplicate of the image at existing_path.
+    Returns True if similarity >= threshold.
+    """
+    if not os.path.exists(existing_path):
+        return False
+    new_sig = get_image_signature(new_img)
+    existing_sig = get_image_signature(existing_path)
+    similarity = compare_signatures(new_sig, existing_sig)
+    if similarity >= threshold:
+        print(f"Duplicate detected: {similarity:.1f}% similar to {os.path.basename(existing_path)}")
+        return True
+    return False
+
 import cv2
 import time, datetime, sys, signal, urllib, requests, random, json, numpy, pytz
 
@@ -115,7 +168,7 @@ try:
         brightness = (int(p_c[0]) + int(p_c[1]) + int(p_c[2])) / 3
         cloud_probability = max(0, (brightness - 100) / 155)  # Scale from 100-255 to 0-1
         
-        limit=140
+        limit=130
         if p_c[0] >= limit and  p_c[1] >= limit and p_c[2] >= limit:
             # Mark clouds with blue dots
             adjusted_y = int(250 + (pix["y"] - 250) * 0.83)  # Compress Y around center
@@ -160,7 +213,7 @@ try:
         
         # Mark selected crossing with larger red circle
         adjusted_y = int(250 + (pix["y"] - 250) * 0.83)  # Compress Y around center
-        cv2.circle(clouds_cv,(pix["x"],adjusted_y),8,(0,0,255),-1)
+        cv2.circle(clouds_cv,(pix["x"],adjusted_y),4,(0,0,255),-1)
         # Generate high-resolution zoomed image for this crossing
         # Finding the abs map point relative to selection
         abs_x = bprderBB[0] - (bprderBB[0] - bprderBB[2]) / 1000 * pix["x"]
@@ -194,17 +247,28 @@ try:
             
             if crossing_get.status_code == 200:
                 crossing_image = Image.open(BytesIO(crossing_get.content)).resize((crossing_w, crossing_h), Image.ANTIALIAS).convert('RGB')
-                
-                # Check for and delete existing border images with same number
+
+                # Check for existing border images with same number
                 import glob
                 existing_files = glob.glob(crossings_dir + f"border_{border_index:02d}_*.jpg")
-                for old_file in existing_files:
-                    try:
-                        os.remove(old_file)
-                        print(f"Deleted old image: {os.path.basename(old_file)}")
-                    except OSError as e:
-                        print(f"Could not delete {old_file}: {e}")
-                
+
+                # Check if new image is too similar to existing one (skip if duplicate)
+                if existing_files:
+                    # Compare with the most recent existing file
+                    existing_files.sort()
+                    latest_existing = existing_files[-1]
+                    if is_duplicate_image(crossing_image, latest_existing, threshold=99.5):
+                        print(f"Skipping border {border_index}: image unchanged from previous")
+                        continue
+
+                    # Not a duplicate, delete old files before saving new one
+                    for old_file in existing_files:
+                        try:
+                            os.remove(old_file)
+                            print(f"Deleted old image: {os.path.basename(old_file)}")
+                        except OSError as e:
+                            print(f"Could not delete {old_file}: {e}")
+
                 # Save with requested filename format: border_XX_timestamp.jpg
                 filename = f"border_{border_index:02d}_{timestamp}.jpg"
                 crossing_image.save(crossings_dir + filename)
@@ -217,7 +281,7 @@ try:
     #In case of need for analysis, lets save the CV image with border crossings marked
     cv2.imwrite(path_cumulus+'clouds_cv.jpg',clouds_cv)
     # Save image with timestamp showing border crossing analysis
-    cv2.imwrite(path_cumulus+'border_crossings_'+str(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))+'.jpg',clouds_cv)
+    # cv2.imwrite(path_cumulus+'border_crossings_'+str(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))+'.jpg',clouds_cv)
     
     # For backward compatibility, also create the original zoom image if any crossings were selected
     if selected_crossings:
@@ -240,11 +304,35 @@ try:
         zoom_clouds.save(path_cumulus + "zoomclouds.jpg")
     # Create directories if they don't exist
     import os
-    os.makedirs(path_cumulus+"continente", exist_ok=True) 
+    import glob
+    os.makedirs(path_cumulus+"continente", exist_ok=True)
     os.makedirs(path_cumulus+"frontera", exist_ok=True)
-    
-    img_0.save(path_cumulus+"continente/"+str(datetime.datetime.now())+".jpg")
-    cv2.imwrite(path_cumulus+"frontera/"+str(datetime.datetime.now())+'.jpg',clouds_cv)
+
+    # Save continente image only if different from previous
+    continente_files = sorted(glob.glob(path_cumulus+"continente/*.jpg"))
+    if continente_files:
+        if not is_duplicate_image(img_0, continente_files[-1], threshold=99.5):
+            img_0.save(path_cumulus+"continente/"+str(datetime.datetime.now())+".jpg")
+            print("Saved new continente image")
+        else:
+            print("Skipping continente: image unchanged from previous")
+    else:
+        img_0.save(path_cumulus+"continente/"+str(datetime.datetime.now())+".jpg")
+        print("Saved first continente image")
+
+    # Save frontera image only if different from previous
+    frontera_files = sorted(glob.glob(path_cumulus+"frontera/*.jpg"))
+    # Convert clouds_cv to PIL for comparison
+    clouds_pil = Image.fromarray(cv2.cvtColor(clouds_cv, cv2.COLOR_BGR2RGB))
+    if frontera_files:
+        if not is_duplicate_image(clouds_pil, frontera_files[-1], threshold=99.5):
+            cv2.imwrite(path_cumulus+"frontera/"+str(datetime.datetime.now())+'.jpg',clouds_cv)
+            print("Saved new frontera image")
+        else:
+            print("Skipping frontera: image unchanged from previous")
+    else:
+        cv2.imwrite(path_cumulus+"frontera/"+str(datetime.datetime.now())+'.jpg',clouds_cv)
+        print("Saved first frontera image")
 
     continente_cv = cv2.cvtColor(numpy.array(img_0), cv2.COLOR_BGR2GRAY)
 
