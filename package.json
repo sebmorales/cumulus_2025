@@ -2,7 +2,7 @@
   "name": "cloud-migration-border",
   "version": "1.0.0",
   "description": "Interactive visualization of cloud migration across the Mexico-US border",
-  "main": "server.js",
+  "main": "cumulus_2025_server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
