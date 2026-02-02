@@ -54,30 +54,50 @@ class CloudMigrationApp {
     }
 
     async init() {
-        // Use sentences from sentences.js if available, otherwise fallback to CONFIG
-        if (typeof sentences !== 'undefined') {
-            CONFIG.SENTENCES = sentences;
+        try {
+            // Use sentences from sentences.js if available, otherwise fallback to CONFIG
+            if (typeof sentences !== 'undefined') {
+                CONFIG.SENTENCES = sentences;
+            }
+
+            // Update description from sentences.js if available
+            if (typeof description !== 'undefined') {
+                const linkUrl = typeof link_description !== 'undefined' ? link_description : null;
+                this.updateDescription(description, linkUrl);
+            }
+
+            await this.loadData();
+            this.setupSVG();
+            await this.createCoordinateMapping();
+            // this.addCoordinateMarkers(); // Add debug markers - hidden
+            this.createHoverZones();
+            this.setupTextDisplay();
+            this.setupScrollReveal();
+            this.setupConnectionCanvas();
+            this.initializeSocketIO();
+            this.setupKeyboardListeners();
+            this.setupTouchDragListeners();
+            this.setupInstructionsMessage();
+            // this.setupPinchZoom(); // Disabled for now
+        } catch (error) {
+            console.error('Error during initialization:', error);
+        } finally {
+            // Always hide loading message, even if there's an error
+            this.hideLoadingMessage();
         }
-        
-        // Update description from sentences.js if available
-        if (typeof description !== 'undefined') {
-            const linkUrl = typeof link_description !== 'undefined' ? link_description : null;
-            this.updateDescription(description, linkUrl);
+    }
+
+    hideLoadingMessage() {
+        const loadingMessage = document.getElementById('loading-message');
+        if (loadingMessage) {
+            loadingMessage.classList.add('hidden');
+            // Remove from DOM after transition
+            setTimeout(() => {
+                if (loadingMessage.parentNode) {
+                    loadingMessage.parentNode.removeChild(loadingMessage);
+                }
+            }, 500);
         }
-        
-        await this.loadData();
-        this.setupSVG();
-        await this.createCoordinateMapping();
-        // this.addCoordinateMarkers(); // Add debug markers - hidden
-        this.createHoverZones();
-        this.setupTextDisplay();
-        this.setupScrollReveal();
-        this.setupConnectionCanvas();
-        this.initializeSocketIO();
-        this.setupKeyboardListeners();
-        this.setupTouchDragListeners();
-        this.setupInstructionsMessage();
-        // this.setupPinchZoom(); // Disabled for now
     }
 
     updateDescription(descriptionText, linkUrl) {
@@ -797,59 +817,54 @@ class CloudMigrationApp {
     displayTextAlongPath() {
         const textContainer = document.getElementById('border-text');
         textContainer.innerHTML = ''; // Clear existing text
-        
+
         // Try to fit multiple sentences
         let textToDisplay = this.fitMultipleSentences();
         this.currentText = textToDisplay;
-        
-        // Keep all characters including spaces, but render spaces as smaller gaps
+
+        // Keep all characters including spaces
         const chars = [];
         for (let i = 0; i < textToDisplay.length; i++) {
-            const char = textToDisplay[i];
-            chars.push(char);
+            chars.push(textToDisplay[i]);
         }
-        
-        // Calculate character spacing to use the entire path length
+
+        // Character width map for proportional spacing (relative widths)
+        const charWidths = {
+            'i': 0.6, 'l': 0.6, 'I': 0.6, '1': 0.6, '.': 0.4, ',': 0.4, ':': 0.4, ';': 0.4, '!': 0.5, "'": 0.4,
+            'j': 0.7, 't': 0.7, 'f': 0.6, 'r': 0.7,
+            'm': 1.3, 'w': 1.3, 'M': 1.4, 'W': 1.4,
+            ' ': 1.2
+        };
+        const getCharWidth = (c) => charWidths[c] || 1.0;
+
         const totalChars = chars.length;
-        let spacing = this.pathLength / totalChars; // Divide entire path length by character count
-        
-        // Apply minimum spacing based on screen size to maintain consistent kerning
-        const screenWidth = window.innerWidth;
-        let minSpacing;
-        if (screenWidth <= 480) {
-            minSpacing = 8; // Minimum spacing for very small screens
-        } else if (screenWidth <= 768) {
-            minSpacing = 12; // Minimum spacing for mobile screens
-        } else {
-            minSpacing = 16; // Minimum spacing for larger screens
-        }
-        
-        spacing = Math.max(spacing, minSpacing);
-        
-        // Place each character along the path, evenly distributed
-        for (let i = 0; i < totalChars; i++) {
-            const char = chars[i];
-            const distance = (i + 0.5) * spacing; // Center each character in its segment
-            const point = this.borderPath.getPointAtLength(Math.min(distance, this.pathLength));
-            
-            // Get angle for rotation
+        const baseSpacing = 12; // Base spacing in SVG units
+        let distance = 0;
+        let i = 0;
+
+        // Place characters along the path, repeating text until path is filled
+        while (distance < this.pathLength * 0.999) {
+            const char = chars[i % totalChars]; // Repeat text using modulo
+
+            const point = this.borderPath.getPointAtLength(distance);
             const nextPoint = this.borderPath.getPointAtLength(Math.min(distance + 5, this.pathLength));
             const angle = Math.atan2(nextPoint.y - point.y, nextPoint.x - point.x) * 180 / Math.PI;
-            
-            // Create character element
+
             const charElement = document.createElement('span');
             charElement.className = 'border-char';
             charElement.textContent = char;
             charElement.style.left = `${point.x}px`;
             charElement.style.top = `${point.y}px`;
             charElement.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
-            
+
             textContainer.appendChild(charElement);
+
+            // Move distance by character width
+            distance += baseSpacing * getCharWidth(char);
+            i++;
         }
-        
-        console.log(`Displaying: "${textToDisplay}" (${totalChars} characters)`);
-        
-        // Update positions on resize
+
+        console.log(`Displaying: "${textToDisplay}" (${textToDisplay.length} characters)`);
         this.updateTextPositions();
     }
     
@@ -898,53 +913,47 @@ class CloudMigrationApp {
 
     displayTextAlongOutline() {
         if (!this.outlinePath || !this.outlinePathLength) return;
-        
+
         const textContainer = document.getElementById('outline-text');
         textContainer.innerHTML = ''; // Clear existing text
-        
+
         // Use sentences_outline from sentences.js if available
         let outlineSentences = CONFIG.SENTENCES; // fallback
         if (typeof sentences_outline !== 'undefined') {
             outlineSentences = sentences_outline;
         }
-        
+
         // Try to fit multiple sentences along the outline
         let textToDisplay = this.fitMultipleSentencesOutline(outlineSentences);
-        
-        // Keep all characters including spaces, but render spaces as smaller gaps
+
+        // Keep all characters including spaces
         const chars = [];
         for (let i = 0; i < textToDisplay.length; i++) {
-            const char = textToDisplay[i];
-            chars.push(char);
+            chars.push(textToDisplay[i]);
         }
-        
-        // Calculate character spacing to use the entire outline path length
+
+        // Character width map for proportional spacing (relative widths)
+        const charWidths = {
+            'i': 0.6, 'l': 0.6, 'I': 0.6, '1': 0.6, '.': 0.4, ',': 0.4, ':': 0.4, ';': 0.4, '!': 0.5, "'": 0.4,
+            'j': 0.7, 't': 0.7, 'f': 0.6, 'r': 0.7,
+            'm': 1.3, 'w': 1.3, 'M': 1.4, 'W': 1.4,
+            ' ': 1.2
+        };
+        const getCharWidth = (c) => charWidths[c] || 1.0;
+
         const totalChars = chars.length;
-        let spacing = this.outlinePathLength / totalChars; // Divide entire path length by character count
-        
-        // Apply minimum spacing based on screen size to maintain consistent kerning
-        const screenWidth = window.innerWidth;
-        let minSpacing;
-        if (screenWidth <= 480) {
-            minSpacing = 6; // Slightly smaller minimum for outline text on very small screens
-        } else if (screenWidth <= 768) {
-            minSpacing = 10; // Minimum spacing for mobile screens
-        } else {
-            minSpacing = 14; // Minimum spacing for larger screens
-        }
-        
-        spacing = Math.max(spacing, minSpacing);
-        
-        // Place each character along the outline path, evenly distributed
-        for (let i = 0; i < totalChars; i++) {
-            const char = chars[i];
-            const distance = (i + 0.5) * spacing; // Center each character in its segment
-            const point = this.outlinePath.getPointAtLength(Math.min(distance, this.outlinePathLength));
-            
-            // Get angle for rotation
+        const baseSpacing = 8; // Base spacing in SVG units
+        let distance = 0;
+        let i = 0;
+
+        // Place characters along the outline path, repeating text until path is filled
+        while (distance < this.outlinePathLength * 0.999) {
+            const char = chars[i % totalChars]; // Repeat text using modulo
+
+            const point = this.outlinePath.getPointAtLength(distance);
             const nextPoint = this.outlinePath.getPointAtLength(Math.min(distance + 5, this.outlinePathLength));
             const angle = Math.atan2(nextPoint.y - point.y, nextPoint.x - point.x) * 180 / Math.PI;
-            
+
             // Create character element
             const charElement = document.createElement('span');
             charElement.className = 'outline-char';
@@ -952,20 +961,23 @@ class CloudMigrationApp {
             charElement.style.left = `${point.x}px`;
             charElement.style.top = `${point.y}px`;
             charElement.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
-            
+
             textContainer.appendChild(charElement);
+
+            // Move distance by character width
+            distance += baseSpacing * getCharWidth(char);
+            i++;
         }
-        
-        console.log(`Displaying outline text: "${textToDisplay}" (${totalChars} characters)`);
-        
-        // Update positions on resize
+
+        console.log(`Displaying outline text: "${textToDisplay}" (${textToDisplay.length} characters)`);
+
+        // Update positions to screen coordinates
         this.updateOutlineTextPositions();
     }
     
     fitMultipleSentencesOutline(outlineSentences) {
-        // Estimate how many characters we can fit at font size 10 (2 points smaller)
-        // Be more aggressive - roughly 10 path units per character (larger spacing for outline)
-        const estimatedCapacity = Math.floor(this.outlinePathLength / 10);
+        // Estimate how many characters we can fit - extremely tight spacing for outline
+        const estimatedCapacity = Math.floor(this.outlinePathLength * 5);
         
         // Shuffle sentences to get variety each page load
         const shuffled = [...outlineSentences].sort(() => Math.random() - 0.5);
@@ -1007,43 +1019,40 @@ class CloudMigrationApp {
     
     updateOutlineTextPositions() {
         if (!this.outlinePath) return;
-        
+
         const mapOutlineSvg = document.getElementById('map-outline-svg');
         const svgRect = mapOutlineSvg.getBoundingClientRect();
         const containerRect = document.getElementById('border-container').getBoundingClientRect();
-        
+
         const viewBox = mapOutlineSvg.viewBox.baseVal;
         const scaleX = svgRect.width / viewBox.width;
         const scaleY = svgRect.height / viewBox.height;
-        
+
         const chars = document.querySelectorAll('.outline-char');
-        const totalChars = chars.length;
-        let spacing = this.outlinePathLength / totalChars; // Same logic as displayTextAlongOutline
-        
-        // Apply minimum spacing based on screen size to maintain consistent kerning
-        const screenWidth = window.innerWidth;
-        let minSpacing;
-        if (screenWidth <= 480) {
-            minSpacing = 6; // Slightly smaller minimum for outline text on very small screens
-        } else if (screenWidth <= 768) {
-            minSpacing = 10; // Minimum spacing for mobile screens
-        } else {
-            minSpacing = 14; // Minimum spacing for larger screens
-        }
-        
-        spacing = Math.max(spacing, minSpacing);
-        
-        chars.forEach((char, index) => {
-            const distance = (index + 0.5) * spacing; // Same logic as displayTextAlongOutline
+
+        // Same proportional spacing as displayTextAlongOutline
+        const charWidths = {
+            'i': 0.6, 'l': 0.6, 'I': 0.6, '1': 0.6, '.': 0.4, ',': 0.4, ':': 0.4, ';': 0.4, '!': 0.5, "'": 0.4,
+            'j': 0.7, 't': 0.7, 'f': 0.6, 'r': 0.7,
+            'm': 1.3, 'w': 1.3, 'M': 1.4, 'W': 1.4,
+            ' ': 1.2
+        };
+        const getCharWidth = (c) => charWidths[c] || 1.0;
+        const baseSpacing = 8;
+
+        let distance = 0;
+        chars.forEach((char) => {
             const point = this.outlinePath.getPointAtLength(Math.min(distance, this.outlinePathLength));
-            
+
             const x = (point.x * scaleX) + (svgRect.left - containerRect.left);
             const y = (point.y * scaleY) + (svgRect.top - containerRect.top);
-            
-            const transform = char.style.transform.match(/rotate\([^)]+\)/)[0];
+
+            const transform = char.style.transform.match(/rotate\([^)]+\)/)?.[0] || 'rotate(0deg)';
             char.style.left = `${x}px`;
             char.style.top = `${y}px`;
             char.style.transform = `translate(-50%, -50%) ${transform}`;
+
+            distance += baseSpacing * getCharWidth(char.textContent);
         });
     }
 
@@ -1051,39 +1060,36 @@ class CloudMigrationApp {
         const borderSvg = document.getElementById('border-svg');
         const svgRect = borderSvg.getBoundingClientRect();
         const containerRect = document.getElementById('border-container').getBoundingClientRect();
-        
+
         const viewBox = borderSvg.viewBox.baseVal;
         const scaleX = svgRect.width / viewBox.width;
         const scaleY = svgRect.height / viewBox.height;
-        
+
         const chars = document.querySelectorAll('.border-char');
-        const totalChars = chars.length;
-        let spacing = this.pathLength / totalChars; // Same logic as displayTextAlongPath
-        
-        // Apply minimum spacing based on screen size to maintain consistent kerning
-        const screenWidth = window.innerWidth;
-        let minSpacing;
-        if (screenWidth <= 480) {
-            minSpacing = 8; // Minimum spacing for very small screens
-        } else if (screenWidth <= 768) {
-            minSpacing = 12; // Minimum spacing for mobile screens
-        } else {
-            minSpacing = 16; // Minimum spacing for larger screens
-        }
-        
-        spacing = Math.max(spacing, minSpacing);
-        
-        chars.forEach((char, index) => {
-            const distance = (index + 0.5) * spacing; // Same logic as displayTextAlongPath
+
+        // Same proportional spacing as displayTextAlongPath
+        const charWidths = {
+            'i': 0.6, 'l': 0.6, 'I': 0.6, '1': 0.6, '.': 0.4, ',': 0.4, ':': 0.4, ';': 0.4, '!': 0.5, "'": 0.4,
+            'j': 0.7, 't': 0.7, 'f': 0.6, 'r': 0.7,
+            'm': 1.3, 'w': 1.3, 'M': 1.4, 'W': 1.4,
+            ' ': 1.2
+        };
+        const getCharWidth = (c) => charWidths[c] || 1.0;
+        const baseSpacing = 12;
+
+        let distance = 0;
+        chars.forEach((char) => {
             const point = this.borderPath.getPointAtLength(Math.min(distance, this.pathLength));
-            
+
             const x = (point.x * scaleX) + (svgRect.left - containerRect.left);
             const y = (point.y * scaleY) + (svgRect.top - containerRect.top);
-            
-            const transform = char.style.transform.match(/rotate\([^)]+\)/)[0];
+
+            const transform = char.style.transform.match(/rotate\([^)]+\)/)?.[0] || 'rotate(0deg)';
             char.style.left = `${x}px`;
             char.style.top = `${y}px`;
             char.style.transform = `translate(-50%, -50%) ${transform}`;
+
+            distance += baseSpacing * getCharWidth(char.textContent);
         });
     }
 
@@ -2162,7 +2168,6 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             height: auto;
             transform: translate(-50%, -50%);
             z-index: 1000;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             opacity: 0;
             transition: opacity 0.3s ease;
         `;

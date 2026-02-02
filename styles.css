@@ -32,6 +32,33 @@ body::-webkit-scrollbar {
     min-height: 100vh;
 }
 
+/* Loading message - centered overlay */
+#loading-message {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+}
+
+#loading-message.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.loading-text {
+    font-size: 18px;
+    font-family: 'Suisse Regular', sans-serif;
+    color: #000;
+    font-style: italic;
+}
+
 /* Border container - fullscreen on load */
 #border-container {
     position: fixed;
@@ -76,9 +103,8 @@ body::-webkit-scrollbar {
 #map-outline-svg path {
     fill: none;
     /* filrgb(2, 81, 55)6a6; */
-    /* stroke: #000000; */
-    stroke:none;
-    stroke-width: 1;
+    stroke: none;
+    stroke-width: 0;
     vector-effect: non-scaling-stroke;
 }
 
@@ -103,7 +129,7 @@ body::-webkit-scrollbar {
 
 .outline-char {
     position: absolute;
-    font-size: 10px; /* 2 points smaller than border text (12px) */
+    font-size: 14px;
     font-weight: 400;
     color: #000000;
     user-select: none;
@@ -124,7 +150,7 @@ body::-webkit-scrollbar {
 
 .border-char {
     position: absolute;
-    font-size: 12px;
+    font-size: 19px;
     font-weight: 400;
     color: #000000;
     user-select: none;
@@ -348,7 +374,7 @@ body::-webkit-scrollbar {
     }
     
     .border-char {
-        font-size: 6px; /* Reduced from 8px */
+        font-size: 10px;
     }
     
     .outline-char {
@@ -392,7 +418,7 @@ body::-webkit-scrollbar {
     }
     
     .border-char {
-        font-size: 4px; /* Even smaller for very small screens */
+        font-size: 6px;
     }
     
     .outline-char {
