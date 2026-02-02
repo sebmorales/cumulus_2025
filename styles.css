@@ -150,7 +150,7 @@ body::-webkit-scrollbar {
 
 .border-char {
     position: absolute;
-    font-size: 19px;
+    font-size: 15px;
     font-weight: 400;
     color: #000000;
     user-select: none;
@@ -374,7 +374,7 @@ body::-webkit-scrollbar {
     }
     
     .border-char {
-        font-size: 10px;
+        font-size: 8px;
     }
     
     .outline-char {
@@ -418,7 +418,7 @@ body::-webkit-scrollbar {
     }
     
     .border-char {
-        font-size: 6px;
+        font-size: 5px;
     }
     
     .outline-char {

@@ -80,6 +80,7 @@ def is_duplicate_image(new_img, existing_path, threshold=99.5):
 
 import cv2
 import time, datetime, sys, signal, urllib, requests, random, json, numpy, pytz
+import subprocess
 
 #from StringIO import StringIO
 # Because the program will run form the crontab, we need to specify the absolute path
@@ -128,28 +129,17 @@ try:
     # img_clouds = np.array(bytearray(response_clouds.read()), dtype=np.uint8)
     img_clouds = Image.open(BytesIO(response_clouds.content)).resize((1000,500),Image.ANTIALIAS).convert('RGB')
     
-    # Check if this image is identical to the previous one
+    # Check if this image is similar to the previous one (using threshold-based comparison)
     previous_clouds_path = path_cumulus + "clouds_previous.jpg"
     current_clouds_path = path_cumulus + "clouds.jpg"
-    
+
     # Compare with previous image if it exists
     if os.path.exists(previous_clouds_path):
-        try:
-            previous_img = Image.open(previous_clouds_path).convert('RGB')
-            
-            # Convert both images to numpy arrays for comparison
-            current_array = numpy.array(img_clouds)
-            previous_array = numpy.array(previous_img)
-            
-            # Check if images are identical
-            if numpy.array_equal(current_array, previous_array):
-                print("Border clouds image unchanged from previous - skipping processing")
-                # Update the previous image timestamp and exit
-                img_clouds.save(previous_clouds_path)
-                exit()
-        except Exception as e:
-            print(f"Error comparing with previous image: {e}")
-            # Continue processing if comparison fails
+        if is_duplicate_image(img_clouds, previous_clouds_path, threshold=98.0):
+            print("Border clouds image unchanged from previous - skipping processing (including ML detection)")
+            # Update the previous image timestamp and exit
+            img_clouds.save(previous_clouds_path)
+            exit()
     
     # Save current image and copy as previous for next comparison
     img_clouds.save(current_clouds_path)
@@ -410,7 +400,31 @@ try:
     pilBW.save(path_cumulus+'nubes_frontera.bmp')
     # cv2.imwrite(path_cumulus+'nubes_frontera.bmp', outMat_BW,[cv2.IMWRITE_PNG_BILEVEL, 9])
 
-
+    # Run ML cloud detection
+    try:
+        ml_script = '/home/morakana/cumulus/cumulus_2025/cloud_detection_ml_final.py'
+        ml_output = '/home/morakana/cumulus/cumulus_2025/border_images/ml_detection'
+        print("Running ML cloud detection...")
+        # Add user's local packages to PYTHONPATH for root execution
+        env = os.environ.copy()
+        env['PYTHONPATH'] = '/home/morakana/.local/lib/python3.8/site-packages:' + env.get('PYTHONPATH', '')
+        result = subprocess.run(
+            ['python3', ml_script, '--minimal', '--output', ml_output],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env
+        )
+        if result.returncode == 0:
+            print("ML detection completed successfully")
+            # Extract clouds detected from output
+            for line in result.stdout.split('\n'):
+                if 'Clouds detected:' in line:
+                    print("ML: " + line.strip())
+        else:
+            print("ML detection failed: " + result.stderr[:200])
+    except Exception as ml_error:
+        print("ML detection error: " + str(ml_error))
 
 
 except IOError as e:

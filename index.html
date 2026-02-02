@@ -12,7 +12,7 @@
         <div id="loading-message">
             <div class="loading-text">cumulus loading</div>
         </div>
-        
+
         <!-- Border path with text -->
         <div id="border-container">
             <!-- Map outline background -->
@@ -32,17 +32,18 @@
         <!-- Image container for satellite images -->
         <div id="images-container"></div>
 
-        <!-- Connection lines container -->
-        <div id="connections-container">
-            <!-- Individual SVG lines will be created here -->
-        </div>
-
-        <!-- Info panel -->
-        <div id="info-panel" class="panel hidden">
+        <!-- Scroll reveal panels -->
+        <div id="left-panel" class="panel hidden">
             <h2>Recent Crossings</h2>
             <ul id="crossings-list"></ul>
         </div>
-        
+
+        <!-- Right panel (hidden by default, used for description if needed) -->
+        <div id="right-panel" class="panel hidden" style="display: none;"></div>
+
+        <!-- Connection lines canvas -->
+        <canvas id="connections-canvas"></canvas>
+
         <!-- MORAKANA logo -->
         <div id="morakana-logo">
             <img src="./cumulus_reference/MORAKANAclear.png" alt="MORAKANA">

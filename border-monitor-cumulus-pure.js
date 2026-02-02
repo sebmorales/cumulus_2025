@@ -911,14 +911,136 @@ async function monitorBorderClouds_CumulusStyle() {
   }
 }
 
+/**
+ * Run ML-based cloud detection (Python script)
+ * This runs alongside the RGB threshold method for comparison
+ */
+async function runMLCloudDetection(timestamp) {
+  const { spawn } = require('child_process');
+
+  return new Promise((resolve, reject) => {
+    console.log('\n🤖 Starting ML-based cloud detection...');
+
+    const mlScript = path.join(__dirname, 'cloud_detection_ml_final.py');
+    const outputDir = path.join(CONFIG.outputDir, 'ml_detection');
+
+    // Create ML output directory
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const python = spawn('python3', [
+      mlScript,
+      '--threshold', '0.25',
+      '--output', outputDir,
+      '--minimal'
+    ], {
+      cwd: __dirname
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data) => {
+      const output = data.toString();
+      stdout += output;
+      // Show progress
+      if (output.includes('Clouds detected:') || output.includes('RESULTS')) {
+        console.log('   🤖 ' + output.trim());
+      }
+    });
+
+    python.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', (code) => {
+      if (code === 0) {
+        console.log('✅ ML cloud detection completed successfully');
+
+        // Try to read the latest report
+        try {
+          const reportFiles = fs.readdirSync(outputDir)
+            .filter(f => f.startsWith('report_') && f.endsWith('.json'))
+            .sort()
+            .reverse();
+
+          if (reportFiles.length > 0) {
+            const reportPath = path.join(outputDir, reportFiles[0]);
+            const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            resolve({
+              success: true,
+              clouds_detected: report.clouds_detected,
+              total_points: report.total_points,
+              threshold: report.threshold,
+              reportFile: reportFiles[0]
+            });
+            return;
+          }
+        } catch (e) {
+          // Ignore read errors
+        }
+
+        resolve({ success: true });
+      } else {
+        console.error('❌ ML detection failed with code:', code);
+        if (stderr) console.error('   Error:', stderr.slice(0, 200));
+        resolve({ success: false, error: stderr || 'Unknown error' });
+      }
+    });
+
+    python.on('error', (err) => {
+      console.error('❌ Failed to start ML detection:', err.message);
+      resolve({ success: false, error: err.message });
+    });
+
+    // Timeout after 5 minutes
+    setTimeout(() => {
+      python.kill();
+      resolve({ success: false, error: 'Timeout' });
+    }, 300000);
+  });
+}
+
+/**
+ * Main function with optional ML detection
+ */
+async function monitorWithML(runML = true) {
+  // Run the standard RGB threshold detection
+  const result = await monitorBorderClouds_CumulusStyle();
+
+  // Optionally run ML detection for comparison
+  if (runML && result.success) {
+    try {
+      const mlResult = await runMLCloudDetection(result.timestamp);
+      result.mlDetection = mlResult;
+
+      if (mlResult.success && mlResult.clouds_detected !== undefined) {
+        console.log('\n📊 Comparison:');
+        console.log(`   RGB Threshold: ${result.cloudy} clouds detected`);
+        console.log(`   ML Detection:  ${mlResult.clouds_detected} clouds detected`);
+      }
+    } catch (e) {
+      console.error('⚠️  ML detection error:', e.message);
+      result.mlDetection = { success: false, error: e.message };
+    }
+  }
+
+  return result;
+}
+
 // Run if called directly
 if (require.main === module) {
-  monitorBorderClouds_CumulusStyle()
+  // Check for --no-ml flag to disable ML detection
+  const skipML = process.argv.includes('--no-ml');
+
+  // Always run with ML detection unless --no-ml is passed
+  monitorWithML(!skipML)
     .then(result => {
       if (result.success) {
         process.exit(0);
       } else {
-        console.error('\n❌ Pure cumulus.py monitoring failed!');
+        console.error('\n❌ Monitoring failed!');
         process.exit(1);
       }
     })
@@ -928,4 +1050,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { monitorBorderClouds_CumulusStyle, CONFIG };
+module.exports = { monitorBorderClouds_CumulusStyle, monitorWithML, runMLCloudDetection, CONFIG };

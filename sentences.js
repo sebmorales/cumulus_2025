@@ -1,15 +1,15 @@
 //this file contains variables to easily edit the texts and links and behaviours of the page
 
 title="Cumulus"
-sentences=[ "Borders are a man made line",
+sentences=[ "Borders are a man made line.",
     "Have you ever been denied passage?",
     "Could you see this line from outer space?",
     "What does it mean for a body to move across?",
     "To whom and what do this lines apply?",
     "Could there be another way?",
-    "Can we be all clouds?",
-    "Can we unsee borders?",
-    "Can we look from a higher perspective?"
+    "Can we all be clouds?",
+    "Invisible from a high perspective.",
+    "Who assigns identity?"
 ]
 
 sentences_outline=[ "Yo soy un puente tendido",
