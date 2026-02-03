@@ -2138,21 +2138,18 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
     async showBorderAnalysisImage() {
         if (this.borderAnalysisVisible) return;
 
-        const latestImagePath = await this.getLatestFronteraImage();
-        if (!latestImagePath) {
-            console.warn('No border analysis image available');
-            return;
-        }
+        // Use the ML cloud detection overlay image
+        const mlImagePath = '/public/images/clouds_ml.jpg';
 
         // Create image element
         const img = document.createElement('img');
         img.className = 'border-analysis-image';
-        img.src = latestImagePath;
-        img.alt = 'Latest border analysis';
+        img.src = mlImagePath + '?t=' + Date.now(); // Cache bust to get latest
+        img.alt = 'ML Cloud Detection Analysis';
         
-        // Use 85% of screen width regardless of screen size
+        // Use 81% of screen width regardless of screen size
         const screenWidth = window.innerWidth;
-        const widthPercent = 85;
+        const widthPercent = 81;
         
         console.log(`Screen: ${screenWidth}px, Using: ${widthPercent}%`);
         
