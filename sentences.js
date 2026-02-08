@@ -43,8 +43,9 @@ link_description=`https://www.morakana.com/cumulus/`
 
 instructions=`
 * Hover over the border to see the latest cloud at specific crossings
-* Press “s” to show all latests crossings
-* Press “b” to display the last border analysis 
+* Press 0-9 to show the latest crossings
+* Press "s" to show all latests crossings
+* Press "b" to display the last border analysis
 * Press "v" to play video about Cumulus
 * Scroll down to reveal more information`
 

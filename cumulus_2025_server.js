@@ -130,6 +130,71 @@ app.get('/api/crossing-images/:filename', (req, res) => {
     });
 });
 
+// Get selection metadata (includes primary/highest probability image)
+app.get('/api/selection', (req, res) => {
+    const fs = require('fs');
+    const selectionFile = path.join(__dirname, 'public', 'images', 'crossings', 'selection.json');
+
+    try {
+        if (!fs.existsSync(selectionFile)) {
+            return res.status(404).json({ error: 'Selection metadata not found' });
+        }
+
+        const data = JSON.parse(fs.readFileSync(selectionFile, 'utf8'));
+        res.json(data);
+    } catch (error) {
+        console.error('Error reading selection metadata:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get the most recently modified image from public/images/crossings directory
+app.get('/api/latest-crossing-image', (req, res) => {
+    const fs = require('fs');
+    const crossingsDir = path.join(__dirname, 'public', 'images', 'crossings');
+
+    try {
+        if (!fs.existsSync(crossingsDir)) {
+            return res.status(404).json({ error: 'crossings directory not found' });
+        }
+
+        const files = fs.readdirSync(crossingsDir);
+        const imageFiles = files.filter(file =>
+            file.startsWith('border_') && file.endsWith('.jpg')
+        );
+
+        if (imageFiles.length === 0) {
+            return res.status(404).json({ error: 'No crossing images found' });
+        }
+
+        // Find the most recently modified file
+        let latestFile = null;
+        let latestMtime = 0;
+
+        for (const file of imageFiles) {
+            const filePath = path.join(crossingsDir, file);
+            const stats = fs.statSync(filePath);
+            if (stats.mtimeMs > latestMtime) {
+                latestMtime = stats.mtimeMs;
+                latestFile = file;
+            }
+        }
+
+        // Extract border number from filename (border_31_2026-02-07_19-08-40.jpg -> 31)
+        const match = latestFile.match(/border_(\d+)_/);
+        const borderNumber = match ? parseInt(match[1], 10) : null;
+
+        res.json({
+            filename: latestFile,
+            borderNumber: borderNumber,
+            modifiedTime: latestMtime
+        });
+    } catch (error) {
+        console.error('Error getting latest crossing image:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // Serve reference images (fallback)
 app.get('/api/images/:filename', (req, res) => {
     const filename = req.params.filename;
@@ -191,13 +256,52 @@ if (require('fs').existsSync(cloudsDir)) {
     watcher
         .on('add', (filePath) => {
             const filename = path.basename(filePath);
-            if (filename.startsWith('border_') && filename.endsWith('.jpg')) {
+            if (filename === 'selection.json') {
+                console.log('Selection metadata created');
+                try {
+                    const fs = require('fs');
+                    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                    io.emit('selection-updated', data);
+                } catch (e) {
+                    console.error('Error reading selection.json:', e);
+                }
+            } else if (filename.startsWith('border_') && filename.endsWith('.jpg')) {
                 console.log(`New cloud image detected: ${filename}`);
                 const updatedList = getCurrentImageList();
                 io.emit('images-updated', {
                     type: 'added',
                     filename: filename,
                     imageList: updatedList
+                });
+                // Also emit crossing-image-updated for the latest image display
+                const match = filename.match(/border_(\d+)_/);
+                const borderNumber = match ? parseInt(match[1], 10) : null;
+                io.emit('crossing-image-updated', {
+                    type: 'added',
+                    filename: filename,
+                    borderNumber: borderNumber
+                });
+            }
+        })
+        .on('change', (filePath) => {
+            const filename = path.basename(filePath);
+            if (filename === 'selection.json') {
+                console.log('Selection metadata updated');
+                try {
+                    const fs = require('fs');
+                    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                    io.emit('selection-updated', data);
+                } catch (e) {
+                    console.error('Error reading selection.json:', e);
+                }
+            } else if (filename.startsWith('border_') && filename.endsWith('.jpg')) {
+                console.log(`Cloud image changed: ${filename}`);
+                const match = filename.match(/border_(\d+)_/);
+                const borderNumber = match ? parseInt(match[1], 10) : null;
+                io.emit('crossing-image-updated', {
+                    type: 'changed',
+                    filename: filename,
+                    borderNumber: borderNumber
                 });
             }
         })

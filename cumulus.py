@@ -148,21 +148,65 @@ try:
     # clouds_cv = numpy.array(img_clouds)
     clouds_cv = cv2.cvtColor(numpy.array(img_clouds), cv2.COLOR_RGB2BGR)
 
-    # Enhanced cloud detection with probability calculation
+    # Run ML cloud detection FIRST to use its results for crossing selection
+    ml_results = {}
+    ml_script = '/home/morakana/cumulus/cumulus_2025/cloud_detection_ml_final.py'
+    ml_output = '/home/morakana/cumulus/cumulus_2025/border_images/ml_detection'
+
+    try:
+        print("Running ML cloud detection...")
+        env = os.environ.copy()
+        env['PYTHONPATH'] = '/home/morakana/.local/lib/python3.8/site-packages:' + env.get('PYTHONPATH', '')
+        result = subprocess.run(
+            ['python3', ml_script, '--output', ml_output],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env
+        )
+        if result.returncode == 0:
+            print("ML detection completed successfully")
+            # Read the latest ML report to get per-crossing results
+            import glob
+            report_files = sorted(glob.glob(ml_output + '/report_*.json'))
+            if report_files:
+                with open(report_files[-1], 'r') as f:
+                    ml_report = json.load(f)
+                    for r in ml_report.get('results', []):
+                        ml_results[r['index']] = {
+                            'is_cloud': r['is_cloud'],
+                            'probability': r['probability']
+                        }
+                    print(f"ML: {ml_report.get('clouds_detected', 0)}/{ml_report.get('total_points', 0)} clouds detected")
+        else:
+            print("ML detection failed: " + result.stderr[:200])
+    except Exception as ml_error:
+        print("ML detection error: " + str(ml_error))
+
+    # Build cloud_crossings using ML results (fallback to RGB if ML failed)
     cloud_crossings = []
-    #For each point on border, check if there are clouds and calculate probability
+    use_ml = len(ml_results) > 0
+    print(f"Using {'ML' if use_ml else 'RGB'} detection for crossing selection")
+
     for index, pix in enumerate(frontera['points']):
-        #get color value of pixel
-        p_c=clouds_cv[pix["y"],pix["x"]]
-        # Calculate cloud probability based on brightness (0-255 scale)
+        # Get RGB values for visualization
+        p_c = clouds_cv[pix["y"], pix["x"]]
         brightness = (int(p_c[0]) + int(p_c[1]) + int(p_c[2])) / 3
-        cloud_probability = max(0, (brightness - 100) / 155)  # Scale from 100-255 to 0-1
-        
-        limit=130
-        if p_c[0] >= limit and  p_c[1] >= limit and p_c[2] >= limit:
+
+        # Determine if cloud using ML results (or fallback to RGB)
+        if use_ml and index in ml_results:
+            is_cloud = ml_results[index]['is_cloud']
+            cloud_probability = ml_results[index]['probability']
+        else:
+            # Fallback to RGB threshold
+            limit = 130
+            is_cloud = p_c[0] >= limit and p_c[1] >= limit and p_c[2] >= limit
+            cloud_probability = max(0, (brightness - 100) / 155)
+
+        adjusted_y = int(250 + (pix["y"] - 250) * 0.83)
+        if is_cloud:
             # Mark clouds with blue dots
-            adjusted_y = int(250 + (pix["y"] - 250) * 0.83)  # Compress Y around center
-            cv2.circle(clouds_cv,(pix["x"],adjusted_y),3,(255,0,0),-1)
+            cv2.circle(clouds_cv, (pix["x"], adjusted_y), 3, (255, 0, 0), -1)
             cloud_crossings.append({
                 'index': index,
                 'point': pix,
@@ -171,31 +215,82 @@ try:
             })
         else:
             # Mark clear skies with green dots
-            adjusted_y = int(250 + (pix["y"] - 250) * 0.83)  # Compress Y around center
-            cv2.circle(clouds_cv,(pix["x"],adjusted_y),3,(0,255,0),-1)
+            cv2.circle(clouds_cv, (pix["x"], adjusted_y), 3, (0, 255, 0), -1)
+
+    print("Cloudy crossings found (ML-based): " + str(len(cloud_crossings)))
     
-    print("Cloudy crossings found: "+ str(len(cloud_crossings)))
-    
-    # Select crossings based on enhanced logic
+    # Select crossings based on probability + geographic spread
     selected_crossings = []
-    if len(cloud_crossings) >= 5:
+    MIN_DISTANCE = 50  # Minimum pixel distance between selected crossings
+    MAX_CROSSINGS = 9  # Maximum number of crossings to select
+
+    def get_distance(p1, p2):
+        """Calculate Euclidean distance between two crossing points"""
+        return ((p1['point']['x'] - p2['point']['x'])**2 +
+                (p1['point']['y'] - p2['point']['y'])**2) ** 0.5
+
+    def is_far_enough(candidate, selected_list, min_dist):
+        """Check if candidate is far enough from all already selected crossings"""
+        for selected in selected_list:
+            if get_distance(candidate, selected) < min_dist:
+                return False
+        return True
+
+    if len(cloud_crossings) > 0:
         # Sort by probability (highest first)
         cloud_crossings.sort(key=lambda x: x['probability'], reverse=True)
-        # Select 2 highest probability
-        selected_crossings.extend(cloud_crossings[:2])
-        # Select 3 random from remaining
-        remaining = cloud_crossings[2:]
-        selected_crossings.extend(random.sample(remaining, min(3, len(remaining))))
-    else:
-        # Use all available cloudy crossings
-        selected_crossings = cloud_crossings
-    
-    print(f"Selected {len(selected_crossings)} crossings for detailed analysis")
+
+        # Always select the highest probability crossing first
+        selected_crossings.append(cloud_crossings[0])
+
+        # For remaining selections, prioritize probability but enforce geographic spread
+        remaining = cloud_crossings[1:]
+
+        while len(selected_crossings) < MAX_CROSSINGS and remaining:
+            # Find the highest probability crossing that is far enough from selected ones
+            found = False
+            for candidate in remaining:
+                if is_far_enough(candidate, selected_crossings, MIN_DISTANCE):
+                    selected_crossings.append(candidate)
+                    remaining.remove(candidate)
+                    found = True
+                    break
+
+            if not found:
+                # No candidate far enough - reduce distance requirement or stop
+                # Try with half the distance
+                for candidate in remaining:
+                    if is_far_enough(candidate, selected_crossings, MIN_DISTANCE / 2):
+                        selected_crossings.append(candidate)
+                        remaining.remove(candidate)
+                        found = True
+                        break
+
+                if not found:
+                    # Still no candidate - just take the highest probability remaining
+                    if remaining:
+                        selected_crossings.append(remaining[0])
+                        remaining.pop(0)
+                    else:
+                        break
+
+    # Mark the first one (highest probability) for the website to display by default
+    if selected_crossings:
+        selected_crossings[0]['is_primary'] = True
+
+    print(f"Selected {len(selected_crossings)} crossings for detailed analysis (spread: {MIN_DISTANCE}px min distance)")
     
     # Create crossings directory if it doesn't exist
     crossings_dir = path_cumulus + "crossings/"
     os.makedirs(crossings_dir, exist_ok=True)
-    
+
+    # Save selection metadata for the website
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    selection_metadata = {
+        'timestamp': timestamp,
+        'crossings': []
+    }
+
     # Process each selected crossing
     for crossing in selected_crossings:
         pix = crossing['point']
@@ -249,6 +344,15 @@ try:
                     latest_existing = existing_files[-1]
                     if is_duplicate_image(crossing_image, latest_existing, threshold=99.5):
                         print(f"Skipping border {border_index}: image unchanged from previous")
+                        # Still add existing image to metadata
+                        selection_metadata['crossings'].append({
+                            'filename': os.path.basename(latest_existing),
+                            'border_index': border_index,
+                            'probability': crossing['probability'],
+                            'is_primary': crossing.get('is_primary', False),
+                            'x': pix['x'],
+                            'y': pix['y']
+                        })
                         continue
 
                     # Not a duplicate, delete old files before saving new one
@@ -263,11 +367,28 @@ try:
                 filename = f"border_{border_index:02d}_{timestamp}.jpg"
                 crossing_image.save(crossings_dir + filename)
                 print(f"Saved high-resolution image: {filename}")
+
+                # Add to metadata
+                selection_metadata['crossings'].append({
+                    'filename': filename,
+                    'border_index': border_index,
+                    'probability': crossing['probability'],
+                    'is_primary': crossing.get('is_primary', False),
+                    'x': pix['x'],
+                    'y': pix['y']
+                })
             else:
                 print(f"Failed to retrieve image for border {border_index}: HTTP {crossing_get.status_code}")
         except Exception as e:
             print(f"Error processing border {border_index}: {e}")
-    
+
+    # Save selection metadata for the website
+    if selection_metadata['crossings']:
+        metadata_file = crossings_dir + "selection.json"
+        with open(metadata_file, 'w') as f:
+            json.dump(selection_metadata, f, indent=2)
+        print(f"Saved selection metadata: {len(selection_metadata['crossings'])} crossings")
+
     #In case of need for analysis, lets save the CV image with border crossings marked
     cv2.imwrite(path_cumulus+'clouds_cv.jpg',clouds_cv)
     # Save image with timestamp showing border crossing analysis
@@ -362,69 +483,49 @@ try:
 
     # cv2.imwrite(path_cumulus+'continente.bmp', outMat_BW,[cv2.IMWRITE_PNG_BILEVEL, 9])
 
-    nubes_frontera_cv=cv2.cvtColor(numpy.array(zoom_clouds), cv2.COLOR_BGR2GRAY)
+    # Only create nubes_frontera.bmp if we have selected crossings (zoom_clouds exists)
+    if selected_crossings:
+        nubes_frontera_cv=cv2.cvtColor(numpy.array(zoom_clouds), cv2.COLOR_BGR2GRAY)
 
-    #adding data on images
-    start_point=(0,858)
-    end_point=(528,880)
-    color = (0, 0, 0)
-    thickness = -1
-    nubes_frontera_cv=cv2.rectangle(nubes_frontera_cv, start_point, end_point, color, thickness)
-    text_position = (5,873)
-    # dt = datetime.datetime.now()
-    dt=datetime.datetime.now(pytz.timezone('US/Eastern'))
-    x = dt.strftime("%Y-%m-%d %H:%M:%S")
-    # message=" Clouds Crossing: "+str(abs_x/100000)+", "+str(abs_y/100000) +"    "+str(x)+" GMT"
-    message=" Clouds Crossing: "+str(abs_y/100000)+", "+str(abs_x/100000) +"    "+str(x)
-    cv2.putText(
-        nubes_frontera_cv, #numpy array on which text is written
-        message, #text
-        text_position, #position at which writing has to start
-        cv2.FONT_HERSHEY_SIMPLEX, #font family
-        0.5, #font size
-        (255, 255,255, 255), #font color
-        1, #font stroke
-        cv2.LINE_AA,
-        False)
+        #adding data on images
+        start_point=(0,858)
+        end_point=(528,880)
+        color = (0, 0, 0)
+        thickness = -1
+        nubes_frontera_cv=cv2.rectangle(nubes_frontera_cv, start_point, end_point, color, thickness)
+        text_position = (5,873)
+        # dt = datetime.datetime.now()
+        dt=datetime.datetime.now(pytz.timezone('US/Eastern'))
+        x = dt.strftime("%Y-%m-%d %H:%M:%S")
+        # message=" Clouds Crossing: "+str(abs_x/100000)+", "+str(abs_y/100000) +"    "+str(x)+" GMT"
+        message=" Clouds Crossing: "+str(abs_y/100000)+", "+str(abs_x/100000) +"    "+str(x)
+        cv2.putText(
+            nubes_frontera_cv, #numpy array on which text is written
+            message, #text
+            text_position, #position at which writing has to start
+            cv2.FONT_HERSHEY_SIMPLEX, #font family
+            0.5, #font size
+            (255, 255,255, 255), #font color
+            1, #font stroke
+            cv2.LINE_AA,
+            False)
 
-    nubes_frontera_cv=cv2.rotate(nubes_frontera_cv,cv2.ROTATE_90_CLOCKWISE)
-    nubes_frontera_cv=cv2.rotate(nubes_frontera_cv,cv2.ROTATE_180)
+        nubes_frontera_cv=cv2.rotate(nubes_frontera_cv,cv2.ROTATE_90_CLOCKWISE)
+        nubes_frontera_cv=cv2.rotate(nubes_frontera_cv,cv2.ROTATE_180)
 
-    outMat_gray = dithering.dithering_gray(nubes_frontera_cv.copy(), 1)
-    # outMat_BW = cv2.threshold(outMat_gray, thresh, 255, cv2.THRESH_BINARY)[1]
+        outMat_gray = dithering.dithering_gray(nubes_frontera_cv.copy(), 1)
+        # outMat_BW = cv2.threshold(outMat_gray, thresh, 255, cv2.THRESH_BINARY)[1]
 
-    #This creates a 8bit image (even that it's black and white), so let's convert
-    # it to a 1 bit image so it loads faster on the esp32.
+        #This creates a 8bit image (even that it's black and white), so let's convert
+        # it to a 1 bit image so it loads faster on the esp32.
 
-    pilBW=Image.fromarray(outMat_gray,mode='L').convert('1')
-    pilBW.save(path_cumulus+'nubes_frontera.bmp')
-    # cv2.imwrite(path_cumulus+'nubes_frontera.bmp', outMat_BW,[cv2.IMWRITE_PNG_BILEVEL, 9])
+        pilBW=Image.fromarray(outMat_gray,mode='L').convert('1')
+        pilBW.save(path_cumulus+'nubes_frontera.bmp')
+        # cv2.imwrite(path_cumulus+'nubes_frontera.bmp', outMat_BW,[cv2.IMWRITE_PNG_BILEVEL, 9])
+    else:
+        print("No clouds detected - skipping nubes_frontera.bmp generation")
 
-    # Run ML cloud detection
-    try:
-        ml_script = '/home/morakana/cumulus/cumulus_2025/cloud_detection_ml_final.py'
-        ml_output = '/home/morakana/cumulus/cumulus_2025/border_images/ml_detection'
-        print("Running ML cloud detection...")
-        # Add user's local packages to PYTHONPATH for root execution
-        env = os.environ.copy()
-        env['PYTHONPATH'] = '/home/morakana/.local/lib/python3.8/site-packages:' + env.get('PYTHONPATH', '')
-        result = subprocess.run(
-            ['python3', ml_script, '--minimal', '--output', ml_output],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            env=env
-        )
-        if result.returncode == 0:
-            print("ML detection completed successfully")
-            # Extract clouds detected from output
-            for line in result.stdout.split('\n'):
-                if 'Clouds detected:' in line:
-                    print("ML: " + line.strip())
-        else:
-            print("ML detection failed: " + result.stderr[:200])
-    except Exception as ml_error:
-        print("ML detection error: " + str(ml_error))
+    # ML detection already ran at the beginning - results used for crossing selection
 
 
 except IOError as e:

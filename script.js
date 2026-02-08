@@ -49,7 +49,9 @@ class CloudMigrationApp {
         this.instructionsMessageElement = null; // Track instructions message element
         this.videoVisible = false; // Track video visibility
         this.videoElement = null; // Track video DOM element
-        
+        this.latestImageData = null; // Track the currently displayed latest image
+        this.displayedCrossingCount = 1; // Track how many crossings are being shown
+
         this.init();
     }
 
@@ -75,6 +77,7 @@ class CloudMigrationApp {
             this.setupScrollReveal();
             this.setupConnectionCanvas();
             this.initializeSocketIO();
+            await this.showLatestImage(); // Show the most recent image on load
             this.setupKeyboardListeners();
             this.setupTouchDragListeners();
             this.setupInstructionsMessage();
@@ -708,7 +711,7 @@ class CloudMigrationApp {
                 if (img.parentNode) {
                     img.parentNode.removeChild(img);
                 }
-            }, 2000); // Wait for 2s fade transition to complete
+            }, 5000); // Wait for 5s fade transition to complete (matches CSS)
         }, 15000); // 15 seconds
         
         this.visibleImages.push(imageData);
@@ -1303,7 +1306,7 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
                         if (imageData.element.parentNode) {
                             imageData.element.parentNode.removeChild(imageData.element);
                         }
-                    }, 2000); // Wait for 2s fade transition to complete
+                    }, 5000); // Wait for 5s fade transition to complete (matches CSS)
                 }, 15000); // 15 seconds
             }
         });
@@ -1346,7 +1349,19 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
             console.log('🖼️ Frontera update:', data.type, data.filename);
             this.handleFronteraUpdate(data);
         });
-        
+
+        // Listen for crossing_images folder updates
+        this.socket.on('crossing-image-updated', (data) => {
+            console.log('🖼️ Crossing image update:', data.type, data.filename);
+            this.handleCrossingImageUpdate(data);
+        });
+
+        // Listen for selection metadata updates (highest probability image)
+        this.socket.on('selection-updated', (selection) => {
+            console.log('📊 Selection metadata updated:', selection.timestamp);
+            this.handleSelectionUpdate(selection);
+        });
+
         this.socket.on('error', (error) => {
             console.error('Socket.IO error:', error);
         });
@@ -1354,29 +1369,299 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
     
     async handleRealTimeImageUpdate(updateData) {
         const { type, filename, imageList } = updateData;
-        
+
         if (type === 'added') {
             console.log(`🖼️ New cloud image added: ${filename}`);
-            
+
             // If in show-all mode, update just this specific image
             if (this.showAllMode) {
                 this.updateSpecificShowAllImage(filename);
+            } else {
+                // Auto-display the new image on the map
+                this.showAutoUpdatedImage(filename);
             }
-            
+
             // Refresh the panel data in real-time (no notification)
             await this.refreshPanelData();
-            
+
         } else if (type === 'removed') {
             console.log(`🗑️ Cloud image removed: ${filename}`);
-            
+
             // Remove any visible images that match this filename
             this.removeImageByFilename(filename);
-            
+
             // Refresh the panel data
             await this.refreshPanelData();
         }
     }
-    
+
+    async showLatestImage() {
+        // Try to fetch selection metadata first (includes primary/highest probability image)
+        try {
+            const selectionResponse = await fetch(`/api/selection?_=${Date.now()}`);
+            if (selectionResponse.ok) {
+                const selection = await selectionResponse.json();
+                // Find the primary (highest probability) crossing
+                const primary = selection.crossings?.find(c => c.is_primary);
+                if (primary) {
+                    console.log(`📷 Showing primary image: ${primary.filename} (border ${primary.border_index}, probability: ${(primary.probability * 100).toFixed(1)}%)`);
+                    this.displayLatestImage(primary.filename, primary.border_index);
+                    return;
+                }
+            }
+        } catch (error) {
+            console.log('Selection metadata not available, falling back to latest image');
+        }
+
+        // Fallback: fetch the most recently modified image
+        try {
+            const response = await fetch(`/api/latest-crossing-image?_=${Date.now()}`);
+            if (!response.ok) {
+                console.warn('Could not fetch latest crossing image');
+                return;
+            }
+
+            const data = await response.json();
+            if (!data || !data.filename) {
+                console.log('No crossing images available');
+                return;
+            }
+
+            console.log(`📷 Showing latest image: ${data.filename} (border ${data.borderNumber})`);
+            this.displayLatestImage(data.filename, data.borderNumber);
+        } catch (error) {
+            console.error('Error fetching latest crossing image:', error);
+        }
+    }
+
+    displayLatestImage(filename, borderNumber) {
+        // borderNumber is the crossing index (border_31_... -> 31)
+        const crossing = this.crossingsData.find(c => c.index === borderNumber);
+
+        if (!crossing) {
+            console.warn(`No crossing found for border number: ${borderNumber}`);
+            return;
+        }
+
+        // Image URL from public/images/crossings folder
+        const imageUrl = `/api/crossing-images/${filename}?t=${Date.now()}`;
+
+        // If there's already a latest image displayed, update it instead of creating new
+        if (this.latestImageData) {
+            // Update the source and crossing info
+            this.latestImageData.element.src = imageUrl;
+            this.latestImageData.crossing = crossing;
+            this.latestImageData.filename = filename;
+
+            // Reposition to new crossing location
+            this.repositionLatestImage();
+
+            console.log(`🔄 Updated to ${filename} at border ${borderNumber}: ${crossing.name}`);
+            return;
+        }
+
+        // Create image element
+        const img = document.createElement('img');
+        img.className = 'satellite-image latest-image';
+
+        // Use crossing image from crossing_images folder
+        img.src = imageUrl;
+        img.alt = `Satellite image at ${crossing.name}`;
+
+        // Position image centered exactly on the crossing's SVG coordinates
+        const imageContainer = document.getElementById('border-container');
+        const containerRect = imageContainer.getBoundingClientRect();
+        const borderSvg = document.getElementById('border-svg');
+        const svgRect = borderSvg.getBoundingClientRect();
+
+        // Get SVG viewBox for scaling
+        const viewBox = borderSvg.viewBox.baseVal;
+        const scaleX = svgRect.width / viewBox.width;
+        const scaleY = svgRect.height / viewBox.height;
+
+        // Calculate exact center position of the crossing
+        const centerX = (crossing.svgX * scaleX) + (svgRect.left - containerRect.left);
+        const centerY = (crossing.svgY * scaleY) + (svgRect.top - containerRect.top);
+
+        // Position image so its center aligns with the crossing coordinates
+        img.style.left = `${centerX}px`;
+        img.style.top = `${centerY}px`;
+        img.style.transform = 'translate(-50%, -50%)';
+
+        // Add error handling for missing images
+        img.onerror = () => {
+            console.warn(`Could not load crossing image: ${imageUrl}`);
+        };
+
+        // Add to border container so it scales with zoom
+        const imgContainer = document.getElementById('border-container');
+        imgContainer.appendChild(img);
+
+        // Animate in
+        setTimeout(() => {
+            img.classList.add('visible');
+        }, 50);
+
+        // Store reference (no fade timer - stays visible until replaced)
+        this.latestImageData = {
+            element: img,
+            crossing: crossing,
+            filename: filename
+        };
+
+        console.log(`✨ Displayed ${filename} at border ${borderNumber}: ${crossing.name}`);
+    }
+
+    repositionLatestImage() {
+        if (!this.latestImageData || !this.latestImageData.element) return;
+
+        const crossing = this.latestImageData.crossing;
+        const img = this.latestImageData.element;
+
+        const imageContainer = document.getElementById('border-container');
+        const containerRect = imageContainer.getBoundingClientRect();
+        const borderSvg = document.getElementById('border-svg');
+        const svgRect = borderSvg.getBoundingClientRect();
+
+        const viewBox = borderSvg.viewBox.baseVal;
+        const scaleX = svgRect.width / viewBox.width;
+        const scaleY = svgRect.height / viewBox.height;
+
+        const centerX = (crossing.svgX * scaleX) + (svgRect.left - containerRect.left);
+        const centerY = (crossing.svgY * scaleY) + (svgRect.top - containerRect.top);
+
+        img.style.left = `${centerX}px`;
+        img.style.top = `${centerY}px`;
+    }
+
+    handleCrossingImageUpdate(data) {
+        // Called when a border_XX_TIMESTAMP.jpg file is added or changed
+        console.log(`🔄 Crossing image update: ${data.filename} (border ${data.borderNumber})`);
+        this.displayLatestImage(data.filename, data.borderNumber);
+    }
+
+    handleSelectionUpdate(selection) {
+        // Refresh with the current display count so all visible crossings update
+        console.log(`🎯 Selection updated - refreshing ${this.displayedCrossingCount} crossing(s)`);
+        this.displayNCrossings(this.displayedCrossingCount);
+    }
+
+    async displayNCrossings(n) {
+        // Track the requested count so auto-updates can refresh
+        this.displayedCrossingCount = n;
+
+        // Clear all existing crossing images first
+        this.clearAllCrossingImages();
+
+        if (n === 0) {
+            console.log('🔢 Cleared all crossing images');
+            return;
+        }
+
+        // Fetch selection metadata
+        try {
+            const response = await fetch(`/api/selection?_=${Date.now()}`);
+            if (!response.ok) {
+                console.warn('Could not fetch selection metadata');
+                return;
+            }
+
+            const selection = await response.json();
+            if (!selection.crossings || selection.crossings.length === 0) {
+                console.log('No crossings available');
+                return;
+            }
+
+            // Get the top N crossings (already sorted by probability)
+            const crossingsToShow = selection.crossings.slice(0, Math.min(n, selection.crossings.length));
+
+            console.log(`🔢 Displaying ${crossingsToShow.length} crossing(s)`);
+
+            // Display each crossing
+            for (const crossingData of crossingsToShow) {
+                this.displayCrossingImage(crossingData.filename, crossingData.border_index, crossingData.probability);
+            }
+        } catch (error) {
+            console.error('Error fetching selection for displayNCrossings:', error);
+        }
+    }
+
+    displayCrossingImage(filename, borderIndex, probability) {
+        // Find the crossing data
+        const crossing = this.crossingsData.find(c => c.index === borderIndex);
+        if (!crossing) {
+            console.warn(`No crossing found for border index: ${borderIndex}`);
+            return;
+        }
+
+        // Image URL from public/images/crossings folder
+        const imageUrl = `/api/crossing-images/${filename}?t=${Date.now()}`;
+
+        // Create image element
+        const img = document.createElement('img');
+        img.className = 'satellite-image crossing-image';
+        img.src = imageUrl;
+        img.alt = `Cloud at ${crossing.name} (${(probability * 100).toFixed(1)}%)`;
+        img.dataset.borderIndex = borderIndex;
+
+        // Position image centered on the crossing's SVG coordinates
+        const imageContainer = document.getElementById('border-container');
+        const containerRect = imageContainer.getBoundingClientRect();
+        const borderSvg = document.getElementById('border-svg');
+        const svgRect = borderSvg.getBoundingClientRect();
+
+        const viewBox = borderSvg.viewBox.baseVal;
+        const scaleX = svgRect.width / viewBox.width;
+        const scaleY = svgRect.height / viewBox.height;
+
+        const centerX = (crossing.svgX * scaleX) + (svgRect.left - containerRect.left);
+        const centerY = (crossing.svgY * scaleY) + (svgRect.top - containerRect.top);
+
+        img.style.left = `${centerX}px`;
+        img.style.top = `${centerY}px`;
+        img.style.transform = 'translate(-50%, -50%)';
+
+        img.onerror = () => {
+            console.warn(`Could not load crossing image: ${imageUrl}`);
+        };
+
+        // Add to border container
+        imageContainer.appendChild(img);
+
+        // Animate in
+        setTimeout(() => {
+            img.classList.add('visible');
+        }, 50);
+
+        // Store reference for the primary image (first one displayed)
+        if (!this.latestImageData) {
+            this.latestImageData = {
+                element: img,
+                crossing: crossing,
+                filename: filename
+            };
+        }
+
+        console.log(`✨ Displayed ${filename} at border ${borderIndex}: ${crossing.name} (${(probability * 100).toFixed(1)}%)`);
+    }
+
+    clearAllCrossingImages() {
+        // Remove all crossing images from the container
+        const container = document.getElementById('border-container');
+        const images = container.querySelectorAll('.crossing-image, .latest-image');
+        images.forEach(img => {
+            img.classList.remove('visible');
+            setTimeout(() => {
+                if (img.parentNode) {
+                    img.parentNode.removeChild(img);
+                }
+            }, 300);
+        });
+
+        // Clear the reference
+        this.latestImageData = null;
+    }
+
     async handleFronteraUpdate(updateData) {
         const { type, filename } = updateData;
         
@@ -1536,6 +1821,14 @@ ${crossing.name}, ${crossing['Mex closest city']}, ${crossing['Mex State']} - ${
 
     setupKeyboardListeners() {
         document.addEventListener('keydown', (event) => {
+            // Handle number keys 0-9 for displaying crossings
+            if (event.key >= '0' && event.key <= '9') {
+                const count = parseInt(event.key);
+                console.log(`🔢 Number key ${count} pressed - displaying ${count} crossing(s)`);
+                this.displayNCrossings(count);
+                return;
+            }
+
             if (event.key.toLowerCase() === 'i') {
                 this.toggleInstructions();
             } else if (event.key.toLowerCase() === 's') {
