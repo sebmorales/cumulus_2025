@@ -304,9 +304,9 @@ try:
         abs_x = bprderBB[0] - (bprderBB[0] - bprderBB[2]) / 1000 * pix["x"]
         abs_y = bprderBB[1] - (bprderBB[1] - bprderBB[3]) / 500 * pix["y"] * 0.95
         
-        # High-resolution image parameters (240x400 as requested)
-        crossing_w = 240
-        crossing_h = 400
+        # Native NOAA resolution (~0.009°/px ≈ 1km) at zoom=8
+        crossing_w = 272
+        crossing_h = 453
         zoom = 8  # Higher zoom for more detail
         crossing_map_w = (bprderBB[0] - bprderBB[2]) / zoom
         crossing_map_h = crossing_map_w * (crossing_h / crossing_w)  # Maintain aspect ratio
@@ -363,10 +363,18 @@ try:
                         except OSError as e:
                             print(f"Could not delete {old_file}: {e}")
 
+                # Upscale with Real-ESRGAN x2 before saving
+                try:
+                    from upscale import upscale_image
+                    crossing_image = upscale_image(crossing_image)
+                    print(f"Upscaled border {border_index} to {crossing_image.size}")
+                except Exception as upscale_err:
+                    print(f"Upscale failed for border {border_index}, saving at native res: {upscale_err}")
+
                 # Save with requested filename format: border_XX_timestamp.jpg
                 filename = f"border_{border_index:02d}_{timestamp}.jpg"
                 crossing_image.save(crossings_dir + filename)
-                print(f"Saved high-resolution image: {filename}")
+                print(f"Saved image: {filename}")
 
                 # Add to metadata
                 selection_metadata['crossings'].append({
@@ -444,6 +452,43 @@ try:
     else:
         cv2.imwrite(path_cumulus+"frontera/"+str(datetime.datetime.now())+'.jpg',clouds_cv)
         print("Saved first frontera image")
+
+    # Archive old images (older than 24h) to keep live folders small
+    import shutil
+    archive_base = '/home/morakana/cumulus/cumulus_archive/'
+    archive_max_age_hours = 24
+
+    for folder_name in ['continente', 'frontera']:
+        source_dir = path_cumulus + folder_name + '/'
+        files = sorted(glob.glob(source_dir + '*.jpg'))
+        # Keep the most recent file, archive the rest if older than threshold
+        if len(files) <= 1:
+            continue
+        for fpath in files[:-1]:  # Never archive the latest file
+            try:
+                mtime = os.path.getmtime(fpath)
+                age_hours = (time.time() - mtime) / 3600
+                if age_hours > archive_max_age_hours:
+                    # Determine archive subfolder by month (YYYY-MM)
+                    file_date = datetime.datetime.fromtimestamp(mtime)
+                    month_folder = file_date.strftime('%Y-%m')
+                    dest_dir = os.path.join(archive_base, folder_name, month_folder)
+                    os.makedirs(dest_dir, exist_ok=True)
+                    shutil.move(fpath, os.path.join(dest_dir, os.path.basename(fpath)))
+            except Exception as archive_err:
+                print(f"Archive error for {fpath}: {archive_err}")
+
+    # Count archived files
+    for folder_name in ['continente', 'frontera']:
+        source_dir = path_cumulus + folder_name + '/'
+        remaining = len(glob.glob(source_dir + '*.jpg'))
+        archive_dir = os.path.join(archive_base, folder_name)
+        archived = 0
+        if os.path.exists(archive_dir):
+            for root, dirs, fnames in os.walk(archive_dir):
+                archived += len([f for f in fnames if f.endswith('.jpg')])
+        if archived > 0:
+            print(f"Archive {folder_name}: {remaining} live, {archived} archived")
 
     continente_cv = cv2.cvtColor(numpy.array(img_0), cv2.COLOR_BGR2GRAY)
 

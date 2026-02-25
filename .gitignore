@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+models/*.pth
+venv_ml/
+log/
+node_modules/

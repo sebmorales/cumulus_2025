@@ -173,43 +173,44 @@ def fetch_noaa_image():
 
 
 def create_visualization(image, prob_map, results, threshold):
-    """Create visualization with mask overlay and marked points"""
+    """Create visualization with mask overlay and marked points at 2x resolution"""
+    # Upscale image to 2x for smoother graphics
+    scale = 2
     img_array = np.array(image)
-    img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+    img_upscaled = cv2.resize(img_array, (img_array.shape[1] * scale, img_array.shape[0] * scale), interpolation=cv2.INTER_LANCZOS4)
+    img_bgr = cv2.cvtColor(img_upscaled, cv2.COLOR_RGB2BGR)
 
-    # Create cloud mask
-    cloud_mask = (prob_map > threshold).astype(np.uint8) * 255
+    # Upscale prob_map and create cloud mask at 2x
+    prob_map_upscaled = cv2.resize(prob_map, (prob_map.shape[1] * scale, prob_map.shape[0] * scale), interpolation=cv2.INTER_LINEAR)
+    cloud_mask = (prob_map_upscaled > threshold).astype(np.uint8) * 255
 
-    # Create overlay
+    # Create overlay with light cyan color
     mask_colored = np.zeros_like(img_bgr)
-    mask_colored[:, :, 0] = cloud_mask
-    mask_colored[:, :, 2] = cloud_mask
+    mask_colored[:, :, 0] = cloud_mask  # Blue
+    mask_colored[:, :, 1] = cloud_mask  # Green (cyan = blue + green)
 
-    alpha = 0.35
+    alpha = 0.2
     overlay = img_bgr.copy()
     mask_bool = cloud_mask > 0
     overlay[mask_bool] = cv2.addWeighted(
         img_bgr, 1-alpha, mask_colored, alpha, 0
     )[mask_bool]
 
-    # Draw contours
+    # Draw contours (thinner at 2x looks smoother)
     contours, _ = cv2.findContours(
         cloud_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
-    cv2.drawContours(overlay, contours, -1, (0, 255, 255), 2)
+    cv2.drawContours(overlay, contours, -1, (255, 0, 0), 2)  # Blue in BGR
 
-    # Mark border crossing points
+    # Mark border crossing points with anti-aliased circles (scaled coordinates)
+    # Note: circles drawn at original coordinates to match where detection was performed
     for r in results:
-        x, y = r['point']['x'], r['point']['y']
+        x, y = r['point']['x'] * scale, r['point']['y'] * scale
         color = (255, 0, 0) if r['is_cloud'] else (0, 255, 0)
-        cv2.circle(overlay, (x, y), 5, color, -1)
-        cv2.circle(overlay, (x, y), 6, (255, 255, 255), 1)
-
-    # Add info
-    clouds_detected = sum(1 for r in results if r['is_cloud'])
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    cv2.putText(overlay, f'{timestamp} | Threshold: {threshold} | Clouds: {clouds_detected}/{len(results)}',
-                (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        # Draw filled circle with anti-aliasing (scaled size)
+        cv2.circle(overlay, (x, y), 10, color, -1, cv2.LINE_AA)
+        # Draw white outline with anti-aliasing
+        cv2.circle(overlay, (x, y), 11, (255, 255, 255), 2, cv2.LINE_AA)
 
     return overlay, cloud_mask
 
@@ -251,10 +252,14 @@ def main():
     image.save(f'{args.output}/original_{timestamp}.jpg')
     cv2.imwrite(f'{args.output}/overlay_{timestamp}.jpg', overlay)
 
+    # Also save to fixed location for web display
+    web_overlay_path = os.path.join(SCRIPT_DIR, 'public/images/clouds_ml.jpg')
+    cv2.imwrite(web_overlay_path, overlay)
+
     clouds_detected = sum(1 for r in results if r['is_cloud'])
 
     if not args.minimal:
-        cv2.imwrite(f'{args.output}/mask_{timestamp}.png', mask)
+        # cv2.imwrite(f'{args.output}/mask_{timestamp}.png', mask)
 
         # Save JSON report (convert numpy types)
         def convert_numpy(obj):
@@ -288,7 +293,7 @@ def main():
     print(f'  - overlay_{timestamp}.jpg')
     print(f'  - original_{timestamp}.jpg')
     if not args.minimal:
-        print(f'  - mask_{timestamp}.png')
+        # print(f'  - mask_{timestamp}.png')
         print(f'  - report_{timestamp}.json')
 
     return {'clouds_detected': clouds_detected, 'total_points': len(results)}
