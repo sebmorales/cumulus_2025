@@ -489,10 +489,9 @@ function createSVGOverlay(results, timestamp) {
     if (x >= 0 && x <= CONFIG.imageSize.width && y >= 0 && y <= CONFIG.imageSize.height) {
       return `
   <!-- ${result.name} -->
-  <circle cx="${x}" cy="${y}" r="${CONFIG.markerSize}" 
-          fill="${color}" 
-          stroke="${strokeColor}" 
-          stroke-width="3" 
+  <circle cx="${x}" cy="${y}" r="${CONFIG.markerSize}"
+          fill="${color}"
+          stroke="none"
           opacity="0.9">
     <title>${result.name} - ${statusText} (${result.confidence}%)
 Location: ${result.coordinates.lat.toFixed(4)}, ${result.coordinates.lon.toFixed(4)}

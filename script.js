@@ -548,8 +548,7 @@ class CloudMigrationApp {
             circle.setAttribute('cy', crossing.svgY);
             circle.setAttribute('r', '5'); // Larger radius
             circle.setAttribute('fill', 'red');
-            circle.setAttribute('stroke', 'white');
-            circle.setAttribute('stroke-width', '2');
+            circle.setAttribute('stroke', 'none');
             circle.setAttribute('opacity', '0.9');
             
             // Add tooltip with crossing info

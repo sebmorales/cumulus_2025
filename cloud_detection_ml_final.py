@@ -184,12 +184,13 @@ def create_visualization(image, prob_map, results, threshold):
     prob_map_upscaled = cv2.resize(prob_map, (prob_map.shape[1] * scale, prob_map.shape[0] * scale), interpolation=cv2.INTER_LINEAR)
     cloud_mask = (prob_map_upscaled > threshold).astype(np.uint8) * 255
 
-    # Create overlay with light cyan color
+    # Create overlay with white color
     mask_colored = np.zeros_like(img_bgr)
     mask_colored[:, :, 0] = cloud_mask  # Blue
-    mask_colored[:, :, 1] = cloud_mask  # Green (cyan = blue + green)
+    mask_colored[:, :, 1] = cloud_mask  # Green
+    mask_colored[:, :, 2] = cloud_mask  # Red
 
-    alpha = 0.2
+    alpha = 0.15
     overlay = img_bgr.copy()
     mask_bool = cloud_mask > 0
     overlay[mask_bool] = cv2.addWeighted(
@@ -200,7 +201,7 @@ def create_visualization(image, prob_map, results, threshold):
     contours, _ = cv2.findContours(
         cloud_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
-    cv2.drawContours(overlay, contours, -1, (255, 0, 0), 2)  # Blue in BGR
+    cv2.drawContours(overlay, contours, -1, (255, 255, 255), 2)  # White in BGR
 
     # Mark border crossing points with anti-aliased circles (scaled coordinates)
     # Note: circles drawn at original coordinates to match where detection was performed
@@ -209,8 +210,6 @@ def create_visualization(image, prob_map, results, threshold):
         color = (255, 0, 0) if r['is_cloud'] else (0, 255, 0)
         # Draw filled circle with anti-aliasing (scaled size)
         cv2.circle(overlay, (x, y), 10, color, -1, cv2.LINE_AA)
-        # Draw white outline with anti-aliasing
-        cv2.circle(overlay, (x, y), 11, (255, 255, 255), 2, cv2.LINE_AA)
 
     return overlay, cloud_mask
 
