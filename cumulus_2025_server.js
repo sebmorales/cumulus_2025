@@ -212,6 +212,11 @@ app.get(['/reykjavik', '/reykjav%C3%ADk', '/reykjavík'], (req, res) => {
     res.sendFile(path.join(__dirname, 'reykjavik.html'));
 });
 
+// Reykjavik-3 page: 1x3 cells, each cropped to a 1m square along a 6m wall
+app.get(['/reykjavik-3', '/reykjav%C3%ADk-3', '/reykjavík-3'], (req, res) => {
+    res.sendFile(path.join(__dirname, 'reykjavik-3.html'));
+});
+
 // Serve the main HTML file for all routes
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));

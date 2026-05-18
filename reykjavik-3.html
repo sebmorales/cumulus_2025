@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cumulus — Reykjavík 3</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            overflow: hidden;
+        }
+        body.clean { background: #ffffff; }
+        /* Wall: 6m × 1m conceptual canvas displayed as a 3:1 strip of three
+           1m×1m windows. The page renders only the three windows, side by side. */
+        #wall {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: min(100vw, 300vh);
+            aspect-ratio: 3 / 1;
+            display: flex;
+            background: #ffffff;
+        }
+        .cell {
+            flex: 1 1 0;
+            position: relative;
+            overflow: hidden;
+            background: #ffffff;
+        }
+        /* Trim guides: visible by default to mark where the feed will be
+           split between physical screens. Add ?clean=1 to hide. */
+        #wall {
+            outline: 1px solid #ff2d55;
+            outline-offset: -1px;
+        }
+        .cell + .cell {
+            border-left: 1px solid #ff2d55;
+        }
+        body.clean #wall { outline: none; }
+        body.clean .cell + .cell { border-left: none; }
+        .cloud {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            user-select: none;
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            height: auto;
+        }
+        .cloud.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div id="wall">
+        <div class="cell" data-t="0.25"></div>
+        <div class="cell" data-t="0.5"></div>
+        <div class="cell" data-t="0.75"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+    (async function () {
+        // ?clean=1 hides the trim guides (use for the production capture feed).
+        if (new URLSearchParams(location.search).has('clean')) {
+            document.body.classList.add('clean');
+        }
+
+        // ── Configuration ──────────────────────────────────
+        // Conceptual physical wall (meters).
+        const WALL_W_M = 6;
+        const CELL_M = 1;
+        // Fractional positions of each cell's horizontal center along the wall.
+        const CELL_TS = [0.25, 0.5, 0.75];
+        // Border SVG occupies this fraction of the wall horizontally,
+        // centered (matches the main reykjavik page's 80%).
+        const SVG_WIDTH_RATIO = 0.80;
+        // Cloud images: same proportional size as main reykjavik (11.11vw of
+        // viewport ≈ 11.11% of wall width here).
+        const CLOUD_WIDTH_M = (11.11 / 100) * WALL_W_M;
+        // Border SVG viewBox + frontera source-image space (must match server data).
+        const VB_W = 1398, VB_H = 553;
+        const SRC_W = 1000, SRC_H = 500;
+
+        // ── Load data ─────────────────────────────────────
+        const [crossings, frontera, borderSvgText] = await Promise.all([
+            fetch('/api/crossings').then(r => r.json()),
+            fetch('/public/images/frontera.json').then(r => r.json()),
+            fetch('/api/border').then(r => r.text()),
+        ]);
+        const fronteraPts = frontera.points || [];
+        crossings.forEach((c, i) => {
+            const pt = fronteraPts[i];
+            if (!pt) return;
+            c.svgX = (pt.x / SRC_W) * VB_W;
+            c.svgY = (pt.y / SRC_H) * VB_H;
+            c.index = i;
+        });
+
+        // Parse the border path d-attribute into a hidden SVG path so we can
+        // sample it with getPointAtLength.
+        const pathMatch = borderSvgText.match(/\bd="([^"]+)"/);
+        if (!pathMatch) throw new Error('No path d found in border SVG');
+        const NS = 'http://www.w3.org/2000/svg';
+        const hiddenSvg = document.createElementNS(NS, 'svg');
+        hiddenSvg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
+        hiddenSvg.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
+        const hiddenPath = document.createElementNS(NS, 'path');
+        hiddenPath.setAttribute('d', pathMatch[1]);
+        hiddenSvg.appendChild(hiddenPath);
+        document.body.appendChild(hiddenSvg);
+
+        // Sample the path to build a sorted (x → y) lookup table.
+        const totalLen = hiddenPath.getTotalLength();
+        const N_SAMPLES = 2000;
+        const samples = [];
+        for (let i = 0; i <= N_SAMPLES; i++) {
+            const pt = hiddenPath.getPointAtLength((i / N_SAMPLES) * totalLen);
+            samples.push({ x: pt.x, y: pt.y });
+        }
+        samples.sort((a, b) => a.x - b.x);
+
+        function borderYAtX(targetX) {
+            if (targetX <= samples[0].x) return samples[0].y;
+            if (targetX >= samples[samples.length - 1].x) return samples[samples.length - 1].y;
+            let lo = 0, hi = samples.length - 1;
+            while (hi - lo > 1) {
+                const mid = (lo + hi) >>> 1;
+                if (samples[mid].x < targetX) lo = mid;
+                else hi = mid;
+            }
+            const a = samples[lo], b = samples[hi];
+            if (a.x === b.x) return a.y;
+            const t = (targetX - a.x) / (b.x - a.x);
+            return a.y + t * (b.y - a.y);
+        }
+
+        // ── Canvas math (everything in meters) ────────────
+        // Border SVG horizontal: fills SVG_WIDTH_RATIO of wall, centered.
+        const svgWidthM = SVG_WIDTH_RATIO * WALL_W_M;
+        const svgLeftM  = (WALL_W_M - svgWidthM) / 2;
+        const svgScale  = svgWidthM / VB_W; // meters per viewBox unit (uniform)
+        // Vertical anchor: place border SVG's viewBox y=0 at canvas y=0.
+        // (Cells crop a 1×1 window around the border path so the absolute
+        // vertical position of the SVG doesn't matter — we just need a
+        // consistent reference.)
+        const svgTopM = 0;
+
+        function svgToCanvas(svgX, svgY) {
+            return {
+                x: svgLeftM + svgX * svgScale,
+                y: svgTopM + svgY * svgScale,
+            };
+        }
+
+        // Per-cell state: window center in canvas meters + per-crossing image refs.
+        const cells = [...document.querySelectorAll('.cell')];
+        const cellState = cells.map((el, i) => {
+            const cellT = CELL_TS[i];
+            const cellCxM = cellT * WALL_W_M;
+            // Border y in viewBox at this cell's center x (converted from canvas m).
+            const cellCxSvg = (cellCxM - svgLeftM) / svgScale;
+            const borderYSvg = borderYAtX(cellCxSvg);
+            const cellCyM = svgTopM + borderYSvg * svgScale;
+            return {
+                el,
+                cellT,
+                cellCxM,
+                cellCyM,
+                winLeftM: cellCxM - CELL_M / 2,
+                winTopM:  cellCyM - CELL_M / 2,
+                imagesByBorder: new Map(),
+            };
+        });
+
+        // ── Rendering ─────────────────────────────────────
+        function pxPerMeter(cell) {
+            return cell.el.getBoundingClientRect().width / CELL_M;
+        }
+
+        function positionImage(entry, cell, ppm) {
+            const c = svgToCanvas(entry.crossing.svgX, entry.crossing.svgY);
+            entry.el.style.left  = ((c.x - cell.winLeftM) * ppm) + 'px';
+            entry.el.style.top   = ((c.y - cell.winTopM)  * ppm) + 'px';
+            entry.el.style.width = (CLOUD_WIDTH_M * ppm) + 'px';
+        }
+
+        function relayout() {
+            cellState.forEach(cell => {
+                const ppm = pxPerMeter(cell);
+                cell.imagesByBorder.forEach(entry => positionImage(entry, cell, ppm));
+            });
+        }
+
+        function ensureImage(cell, crossing) {
+            let entry = cell.imagesByBorder.get(crossing.index);
+            if (entry) return entry;
+            const el = document.createElement('img');
+            el.className = 'cloud';
+            el.alt = '';
+            el.onload = () => el.classList.add('visible');
+            cell.el.appendChild(el);
+            entry = { el, crossing };
+            cell.imagesByBorder.set(crossing.index, entry);
+            return entry;
+        }
+
+        function loadImage(crossing, cacheBust, bringToFront) {
+            const padded = String(crossing.index).padStart(2, '0');
+            const url = `/api/crossing-image/${padded}?_=${cacheBust || Date.now()}`;
+            cellState.forEach(cell => {
+                const entry = ensureImage(cell, crossing);
+                entry.el.src = url;
+                if (bringToFront) cell.el.appendChild(entry.el); // re-stack to top
+                positionImage(entry, cell, pxPerMeter(cell));
+            });
+        }
+
+        // Initial load: oldest filename first so newest end up on top of DOM stack.
+        let initialOrder = [];
+        try {
+            const list = await fetch('/api/crossings-list').then(r => r.json());
+            const newestByIdx = new Map();
+            for (const fn of list) {
+                const m = fn.match(/border_(\d+)_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.jpg/);
+                if (!m) continue;
+                const idx = parseInt(m[1], 10);
+                const ts = m[2];
+                const prev = newestByIdx.get(idx);
+                if (!prev || prev < ts) newestByIdx.set(idx, ts);
+            }
+            initialOrder = [...newestByIdx.entries()]
+                .sort((a, b) => a[1].localeCompare(b[1]))
+                .map(([idx]) => idx);
+        } catch (e) {
+            console.warn('crossings-list unavailable, falling back to array order', e);
+        }
+        const seen = new Set(initialOrder);
+        for (let i = 0; i < crossings.length; i++) if (!seen.has(i)) initialOrder.unshift(i);
+
+        initialOrder.forEach(i => {
+            const c = crossings[i];
+            if (c && typeof c.svgX === 'number') loadImage(c);
+        });
+
+        window.addEventListener('resize', relayout);
+
+        // ── Resilience (same policy as /reykjavik) ────────
+        const HARD_RELOAD_MS = 6 * 60 * 60 * 1000;
+        const STALE_MS       = 45 * 60 * 1000;
+        const WATCHDOG_MS    = 60 * 1000;
+        let lastEventAt = Date.now();
+        const markAlive = () => { lastEventAt = Date.now(); };
+
+        setTimeout(() => location.reload(), HARD_RELOAD_MS);
+        setInterval(() => {
+            const stale = Date.now() - lastEventAt;
+            if (stale > STALE_MS && !socket.connected) {
+                console.warn(`watchdog: stale ${Math.round(stale/60000)}m + disconnected → reloading`);
+                location.reload();
+            }
+        }, WATCHDOG_MS);
+
+        // ── Socket.IO live updates ────────────────────────
+        const socket = io({ reconnection: true, reconnectionDelayMax: 30000 });
+        let failedReconnects = 0;
+        socket.on('connect', () => {
+            console.log('socket connected', socket.id);
+            failedReconnects = 0;
+            markAlive();
+        });
+        socket.on('disconnect', (reason) => console.log('socket disconnected:', reason));
+        socket.on('reconnect_failed', () => {
+            console.warn('socket reconnect_failed → reloading');
+            location.reload();
+        });
+        socket.io.on('reconnect_attempt', () => { failedReconnects++; });
+        socket.io.on('reconnect_error', () => {
+            if (failedReconnects >= 20) {
+                console.warn('socket reconnect_error x20 → reloading');
+                location.reload();
+            }
+        });
+
+        socket.on('crossing-image-updated', (data) => {
+            markAlive();
+            const idx = data.borderNumber;
+            if (idx == null) return;
+            const crossing = crossings[idx];
+            if (!crossing) return;
+            loadImage(crossing, Date.now(), true);
+        });
+        socket.on('images-updated', (data) => {
+            markAlive();
+            if (data && data.type === 'added' && data.filename) {
+                const m = data.filename.match(/border_(\d+)_/);
+                if (m) {
+                    const idx = parseInt(m[1], 10);
+                    const crossing = crossings[idx];
+                    if (crossing) loadImage(crossing, Date.now(), true);
+                }
+            }
+        });
+    })();
+    </script>
+</body>
+</html>
