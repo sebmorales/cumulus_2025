@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cumulus — Reykjavík</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #ffffff;
+            overflow: hidden;
+        }
+        #stage {
+            position: fixed;
+            inset: 0;
+        }
+        .cloud {
+            position: absolute;
+            width: 11.11vw;
+            height: auto;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            user-select: none;
+            opacity: 0;
+            transition: opacity 0.6s ease;
+        }
+        .cloud.visible { opacity: 1; }
+        @media (max-width: 768px) {
+            .cloud { width: 13.33vw; }
+        }
+        @media (max-width: 480px) {
+            .cloud { width: 15.56vw; }
+        }
+    </style>
+</head>
+<body>
+    <div id="stage"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+    (async function () {
+        // Border SVG viewBox (must match cumulus_reference/border_line.svg)
+        const VB_W = 1398;
+        const VB_H = 553;
+        // Border SVG is rendered at 80% viewport width, centered (same as main page)
+        const SVG_WIDTH_RATIO = 0.80;
+        // Frontera source-image space (must match main page mapping)
+        const SRC_W = 1000;
+        const SRC_H = 500;
+
+        const stage = document.getElementById('stage');
+        const imagesByBorder = new Map(); // borderIndex -> { el, crossing }
+
+        // Load crossings + frontera in parallel
+        const [crossings, frontera] = await Promise.all([
+            fetch('/api/crossings').then(r => r.json()),
+            fetch('/public/images/frontera.json').then(r => r.json()).catch(() =>
+                fetch('/images/frontera.json').then(r => r.json())
+            ),
+        ]);
+
+        const fronteraPts = frontera.points || [];
+
+        // Map each crossing to a position in the border SVG viewBox
+        crossings.forEach((c, i) => {
+            const pt = fronteraPts[i];
+            if (!pt) return;
+            c.svgX = (pt.x / SRC_W) * VB_W;
+            c.svgY = (pt.y / SRC_H) * VB_H;
+            c.index = i;
+        });
+
+        function viewportPos(svgX, svgY) {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const w = vw * SVG_WIDTH_RATIO;
+            const h = w * (VB_H / VB_W); // preserveAspectRatio xMidYMid meet
+            const left = (vw - w) / 2;
+            const top = (vh - h) / 2;
+            return {
+                x: left + (svgX / VB_W) * w,
+                y: top + (svgY / VB_H) * h,
+            };
+        }
+
+        function ensureImage(crossing) {
+            let entry = imagesByBorder.get(crossing.index);
+            if (entry) return entry;
+            const el = document.createElement('img');
+            el.className = 'cloud';
+            el.alt = '';
+            el.onload = () => el.classList.add('visible');
+            el.onerror = () => { /* silent: image may not exist yet */ };
+            stage.appendChild(el);
+            entry = { el, crossing };
+            imagesByBorder.set(crossing.index, entry);
+            return entry;
+        }
+
+        function positionAll() {
+            for (const { el, crossing } of imagesByBorder.values()) {
+                const p = viewportPos(crossing.svgX, crossing.svgY);
+                el.style.left = p.x + 'px';
+                el.style.top = p.y + 'px';
+            }
+        }
+
+        function loadImage(crossing, cacheBust, bringToFront) {
+            const entry = ensureImage(crossing);
+            const padded = String(crossing.index).padStart(2, '0');
+            const url = `/api/crossing-image/${padded}?_=${cacheBust || Date.now()}`;
+            entry.el.src = url;
+            const p = viewportPos(crossing.svgX, crossing.svgY);
+            entry.el.style.left = p.x + 'px';
+            entry.el.style.top = p.y + 'px';
+            if (bringToFront) stage.appendChild(entry.el); // re-order to top
+        }
+
+        // Initial render: fetch the directory listing so we know mtime order,
+        // then render oldest -> newest so newest end up on top in DOM order.
+        let initialOrder = [];
+        try {
+            const list = await fetch('/api/crossings-list').then(r => r.json());
+            // Parse "border_<idx>_<YYYY-MM-DD_HH-MM-SS>.jpg" and keep newest per crossing.
+            const newestByIdx = new Map();
+            for (const fn of list) {
+                const m = fn.match(/border_(\d+)_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.jpg/);
+                if (!m) continue;
+                const idx = parseInt(m[1], 10);
+                const ts = m[2];
+                const prev = newestByIdx.get(idx);
+                if (!prev || prev < ts) newestByIdx.set(idx, ts);
+            }
+            initialOrder = [...newestByIdx.entries()]
+                .sort((a, b) => a[1].localeCompare(b[1])) // oldest first
+                .map(([idx]) => idx);
+        } catch (e) {
+            console.warn('crossings-list unavailable, falling back to array order', e);
+        }
+        const seen = new Set(initialOrder);
+        for (let i = 0; i < crossings.length; i++) if (!seen.has(i)) initialOrder.unshift(i);
+
+        initialOrder.forEach(i => {
+            const c = crossings[i];
+            if (c && typeof c.svgX === 'number') loadImage(c);
+        });
+
+        window.addEventListener('resize', positionAll);
+
+        // ── Resilience for long unattended runs ────────────────────────
+        // Image updates arrive every ~15 min on average. We treat absence
+        // of events for STALE_MS as evidence the page (or socket, or tab)
+        // has frozen, and force a reload. As a backstop, the page also
+        // hard-reloads every HARD_RELOAD_MS to clear any browser-side
+        // memory creep.
+        const HARD_RELOAD_MS = 6 * 60 * 60 * 1000;  // 6 hours
+        const STALE_MS       = 45 * 60 * 1000;      // 45 minutes
+        const WATCHDOG_MS    = 60 * 1000;           // check every minute
+        let lastEventAt = Date.now();
+        const markAlive = () => { lastEventAt = Date.now(); };
+
+        setTimeout(() => location.reload(), HARD_RELOAD_MS);
+        setInterval(() => {
+            const stale = Date.now() - lastEventAt;
+            if (stale > STALE_MS && !socket.connected) {
+                console.warn(`watchdog: stale ${Math.round(stale/60000)}m + disconnected → reloading`);
+                location.reload();
+            }
+        }, WATCHDOG_MS);
+
+        // Live updates over socket.io. Long polling fallback is on by default,
+        // and reconnection is built in — we just supervise it.
+        const socket = io({ reconnection: true, reconnectionDelayMax: 30000 });
+        let failedReconnects = 0;
+        socket.on('connect', () => {
+            console.log('socket connected', socket.id);
+            failedReconnects = 0;
+            markAlive();
+        });
+        socket.on('disconnect', (reason) => {
+            console.log('socket disconnected:', reason);
+        });
+        socket.on('reconnect_failed', () => {
+            console.warn('socket reconnect_failed → reloading');
+            location.reload();
+        });
+        socket.io.on('reconnect_attempt', () => { failedReconnects++; });
+        socket.io.on('reconnect_error', () => {
+            if (failedReconnects >= 20) {
+                console.warn('socket reconnect_error x20 → reloading');
+                location.reload();
+            }
+        });
+
+        socket.on('crossing-image-updated', (data) => {
+            markAlive();
+            const idx = data.borderNumber;
+            if (idx == null) return;
+            const crossing = crossings[idx];
+            if (!crossing) return;
+            loadImage(crossing, Date.now(), true);
+        });
+
+        socket.on('images-updated', (data) => {
+            markAlive();
+            if (data && data.type === 'added' && data.filename) {
+                const m = data.filename.match(/border_(\d+)_/);
+                if (m) {
+                    const idx = parseInt(m[1], 10);
+                    const crossing = crossings[idx];
+                    if (crossing) loadImage(crossing, Date.now(), true);
+                }
+            }
+        });
+    })();
+    </script>
+</body>
+</html>

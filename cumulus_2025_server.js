@@ -207,6 +207,11 @@ app.get('/api/images/:filename', (req, res) => {
     });
 });
 
+// Reykjavik page: only the cloud images, live updating, no chrome
+app.get(['/reykjavik', '/reykjav%C3%ADk', '/reykjavík'], (req, res) => {
+    res.sendFile(path.join(__dirname, 'reykjavik.html'));
+});
+
 // Serve the main HTML file for all routes
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
