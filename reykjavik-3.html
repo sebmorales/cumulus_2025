@@ -24,11 +24,21 @@
             display: flex;
             background: #ffffff;
         }
+        body.fullscreen #wall {
+            width: 100vw;
+            height: 100vh;
+            aspect-ratio: auto;
+        }
         .cell {
             flex: 1 1 0;
             position: relative;
             overflow: hidden;
             background: #ffffff;
+        }
+        .cell-content {
+            position: absolute;
+            inset: 0;
+            transform-origin: top left;
         }
         /* Trim guides: visible by default to mark where the feed will be
            split between physical screens. Add ?clean=1 to hide. */
@@ -55,18 +65,21 @@
 </head>
 <body>
     <div id="wall">
-        <div class="cell" data-t="0.25"></div>
-        <div class="cell" data-t="0.5"></div>
-        <div class="cell" data-t="0.75"></div>
+        <div class="cell" data-t="0.25"><div class="cell-content"></div></div>
+        <div class="cell" data-t="0.5"><div class="cell-content"></div></div>
+        <div class="cell" data-t="0.75"><div class="cell-content"></div></div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
     (async function () {
+        const params = new URLSearchParams(location.search);
         // ?clean=1 hides the trim guides (use for the production capture feed).
-        if (new URLSearchParams(location.search).has('clean')) {
-            document.body.classList.add('clean');
-        }
+        if (params.has('clean')) document.body.classList.add('clean');
+        // ?fullscreen=true stretches each cell vertically to fill the viewport,
+        // distorting the 1m × 1m crops into 33vw × 100vh non-square panels.
+        const FULLSCREEN = params.get('fullscreen') === 'true';
+        if (FULLSCREEN) document.body.classList.add('fullscreen');
 
         // ── Configuration ──────────────────────────────────
         // Conceptual physical wall (meters).
@@ -166,6 +179,7 @@
             const cellCyM = svgTopM + borderYSvg * svgScale;
             return {
                 el,
+                contentEl: el.querySelector('.cell-content'),
                 cellT,
                 cellCxM,
                 cellCyM,
@@ -191,6 +205,17 @@
             cellState.forEach(cell => {
                 const ppm = pxPerMeter(cell);
                 cell.imagesByBorder.forEach(entry => positionImage(entry, cell, ppm));
+                if (FULLSCREEN) {
+                    // Cells stretch to 33vw × 100vh — non-square. We keep the
+                    // existing 1m × 1m positioning math (anchored top-left) and
+                    // apply a vertical scale to the cell content so it fills
+                    // the full cell height, distorting the clouds.
+                    const rect = cell.el.getBoundingClientRect();
+                    const scaleY = rect.height / rect.width;
+                    cell.contentEl.style.transform = `scaleY(${scaleY})`;
+                } else {
+                    cell.contentEl.style.transform = '';
+                }
             });
         }
 
@@ -201,7 +226,7 @@
             el.className = 'cloud';
             el.alt = '';
             el.onload = () => el.classList.add('visible');
-            cell.el.appendChild(el);
+            cell.contentEl.appendChild(el);
             entry = { el, crossing };
             cell.imagesByBorder.set(crossing.index, entry);
             return entry;
@@ -213,9 +238,11 @@
             cellState.forEach(cell => {
                 const entry = ensureImage(cell, crossing);
                 entry.el.src = url;
-                if (bringToFront) cell.el.appendChild(entry.el); // re-stack to top
+                if (bringToFront) cell.contentEl.appendChild(entry.el); // re-stack to top
                 positionImage(entry, cell, pxPerMeter(cell));
             });
+            // Keep the fullscreen stretch in sync after any image add/swap.
+            if (FULLSCREEN) relayout();
         }
 
         // Initial load: oldest filename first so newest end up on top of DOM stack.
@@ -244,6 +271,10 @@
             const c = crossings[i];
             if (c && typeof c.svgX === 'number') loadImage(c);
         });
+
+        // Ensure the cell-content scaleY transform is applied at startup
+        // (loadImage by itself only calls positionImage, not relayout).
+        relayout();
 
         window.addEventListener('resize', relayout);
 
