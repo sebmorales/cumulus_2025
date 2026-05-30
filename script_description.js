@@ -291,15 +291,18 @@ class CloudMigrationApp {
         this.crossingsData.forEach((crossing, index) => {
             if (index < this.fronteraPoints.length) {
                 const fronteraPoint = this.fronteraPoints[index];
-                
-                // Direct pixel-to-SVG coordinate mapping
-                // Scale the frontera pixel coordinates to match SVG dimensions
+
+                // frontera.json y is pre-compressed by 0.83 around y=250 to
+                // match NOAA's squeezed satellite tile. The border SVG is
+                // drawn in true geographic space, so undo the compression
+                // before scaling to SVG coords.
+                const naturalY = 250 + (fronteraPoint.y - 250) / 0.83;
                 const svgX = (fronteraPoint.x / sourceImageWidth) * svgWidth;
-                const svgY = (fronteraPoint.y / sourceImageHeight) * svgHeight;
-                
+                const svgY = (naturalY / sourceImageHeight) * svgHeight;
+
                 // Convert to approximate GPS for reference
                 const lonProgress = fronteraPoint.x / sourceImageWidth;
-                const latProgress = 1 - (fronteraPoint.y / sourceImageHeight); // Flip Y axis
+                const latProgress = 1 - (naturalY / sourceImageHeight); // Flip Y axis
                 
                 const gpsBounds = {
                     west: -117.04, east: -97.47, north: 32.54, south: 25.88
