@@ -4,6 +4,7 @@ const cors = require('cors');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const chokidar = require('chokidar');
+const { generateContinenteBmp, generateCrossingBmp, getLedState } = require('./bmp_generator');
 
 const app = express();
 const server = createServer(app);
@@ -20,6 +21,59 @@ app.use(cors());
 
 // Serve static files
 app.use(express.static(__dirname));
+
+// E-ink BMP output paths (hoisted so /eink/* routes can reference them
+// without depending on the BMP generator block order).
+const EINK_DIR = path.join(__dirname, 'public', 'eink');
+const CONTINENT_BMP = path.join(EINK_DIR, 'continent.bmp');
+const CLOUD_BMP = path.join(EINK_DIR, 'cloud.bmp');
+const CROSSINGS_DIR = path.join(__dirname, 'public', 'images', 'crossings');
+// Legacy paths served by the old cumulusServer (port 8880) — the un-updatable
+// ESP32 firmware fetches directly from that server, so the fresh BMP has to
+// land in its public/images/ dir. These match what the legacy cumulus.py used
+// to write at 1360×480.
+const LEGACY_CONTINENT_BMP = '/home/morakana/cumulus/public/images/continente_1360x480.bmp';
+const LEGACY_CLOUD_BMP = '/home/morakana/cumulus/public/images/nubes_frontera_1360x480.bmp';
+
+// ── /eink/* routes for ESP32 / hardware clients ─────────────────────────
+// Stable paths decoupled from on-disk filename. Register BEFORE the catch-all.
+app.get('/eink/continent', (req, res) => {
+    res.sendFile(CONTINENT_BMP);
+});
+app.get('/eink/cloud', (req, res) => {
+    res.sendFile(CLOUD_BMP);
+});
+app.get('/eink/leds', (req, res) => {
+    const hours = Number(req.query.hours) || 2;
+    res.json(getLedState(CROSSINGS_DIR, hours));
+});
+// One-shot poll: file mtimes/sizes + LED state in a single response.
+// ESP32 can compare mtimes vs what it has on flash and only download a
+// BMP when it actually changed.
+app.get('/eink/state', (req, res) => {
+    const fs = require('fs');
+    const hours = Number(req.query.hours) || 2;
+    function fileMeta(p) {
+        try {
+            const s = fs.statSync(p);
+            return { mtime: s.mtime.toISOString(), bytes: s.size };
+        } catch (e) {
+            return { mtime: null, bytes: null };
+        }
+    }
+    res.json({
+        continent: { url: '/eink/continent', ...fileMeta(CONTINENT_BMP) },
+        cloud:     { url: '/eink/cloud',     ...fileMeta(CLOUD_BMP) },
+        leds: getLedState(CROSSINGS_DIR, hours),
+        serverTime: new Date().toISOString(),
+    });
+});
+
+// Legacy alias (will remove once nothing polls it).
+app.get('/api/leds', (req, res) => {
+    const hours = Number(req.query.hours) || 2;
+    res.json(getLedState(CROSSINGS_DIR, hours));
+});
 
 // API endpoint to serve crossings data
 app.get('/api/crossings', (req, res) => {
@@ -373,6 +427,34 @@ if (require('fs').existsSync(fronteraDir)) {
 } else {
     console.log(`Frontera directory not found: ${fronteraDir} - will create when needed`);
 }
+
+// ── E-paper BMP generator ─────────────────────────────────────────────────
+// Writes to EINK_DIR (hoisted near the top). Regenerates every 10 minutes.
+const BMP_INTERVAL_MS = 10 * 60 * 1000;
+const CROSSINGS_FOR_BMP = require('./cumulus_reference/crossings.json');
+
+async function regenerateBmps() {
+    const fsp = require('fs').promises;
+    const t0 = Date.now();
+    try {
+        await generateContinenteBmp(CONTINENT_BMP);
+        await fsp.copyFile(CONTINENT_BMP, LEGACY_CONTINENT_BMP);
+        console.log(`[bmp] continent → ${CONTINENT_BMP} (+ legacy mirror) (${Date.now() - t0}ms)`);
+    } catch (e) {
+        console.error('[bmp] continent error:', e.message);
+    }
+    const t1 = Date.now();
+    try {
+        await generateCrossingBmp(CLOUD_BMP, CROSSINGS_DIR, CROSSINGS_FOR_BMP);
+        await fsp.copyFile(CLOUD_BMP, LEGACY_CLOUD_BMP);
+        console.log(`[bmp] cloud → ${CLOUD_BMP} (+ legacy mirror) (${Date.now() - t1}ms)`);
+    } catch (e) {
+        console.error('[bmp] cloud error:', e.message);
+    }
+}
+
+regenerateBmps();
+setInterval(regenerateBmps, BMP_INTERVAL_MS);
 
 server.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
